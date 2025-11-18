@@ -1,0 +1,35 @@
+[tool.poetry]
+name = "langgraph-platform"
+version = "0.1.0"
+description = "Workflow runtime for rapid experimentation and hosting of LangGraph workflows"
+authors = ["Tarun Jain <tarun@example.com>"]
+readme = "README.md"
+packages = [{include = "runtime"}, {include = "platform"}, {include = "cli"}, {include = "api"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+langgraph = "^0.2.0"
+langchain = "^0.3.0"
+langchain-openai = "^0.2.0"
+langfuse = "^2.50.0"
+fastapi = "^0.115.0"
+uvicorn = "^0.32.0"
+click = "^8.1.7"
+watchdog = "^5.0.0"
+pyyaml = "^6.0.2"
+python-dotenv = "^1.0.1"
+psycopg2-binary = "^2.9.9"
+mcp = "^1.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+pytest-asyncio = "^0.24.0"
+black = "^24.8.0"
+ruff = "^0.6.0"
+
+[tool.poetry.scripts]
+lgp = "cli.main:cli"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
