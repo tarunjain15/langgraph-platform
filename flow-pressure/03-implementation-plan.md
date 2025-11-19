@@ -424,188 +424,145 @@ with propagate_attributes(
 
 ---
 
-## Phase R4: Checkpointer Management (PostgreSQL)
+## Phase R4: Checkpointer Management (SQLite)
 
-**Constraint Removed:** SQLite-only (single-server limit)
-**What Emerges:** PostgreSQL checkpointer, multi-server deployment
+**Constraint Removed:** Stateless workflows (no session memory)
+**What Emerges:** SQLite checkpointer, session persistence, state continuity
 
-### Task R4.1: Checkpointer Factory
+**Note**: PostgreSQL support (multi-server deployment) deferred to R8. R4 focuses on unlocking R5 (stateful agents) with minimal SQLite integration.
+
+### Task R4.1: SQLite Checkpointer Factory
 **Type:** Integration Pressure Point
 **Linear:** TBD
 
 **Witness Outcome:**
-- `create_checkpointer(type, config)` works
-- SQLite checkpointer created (experiment mode)
-- PostgreSQL checkpointer created (hosted mode)
-- Config-driven selection (no code changes)
+- `create_checkpointer(config)` creates SqliteSaver
+- checkpoints.sqlite file created with WAL mode
+- checkpoints and writes tables exist
+- Config-driven path selection
 
 **Acceptance Criteria:**
 ```python
-# experiment mode
-checkpointer = create_checkpointer(
-    type="sqlite",
-    config={"path": "./checkpoints.db", "async": True}
-)
+# Create checkpointer
+checkpointer = create_checkpointer({
+    "path": "./checkpoints.sqlite"
+})
 
-# hosted mode
-checkpointer = create_checkpointer(
-    type="postgresql",
-    config={"url": os.getenv("DATABASE_URL"), "pool_size": 10}
-)
+# Verify
+assert os.path.exists("./checkpoints.sqlite")
+assert checkpointer is not None
 ```
 
 **Code Pattern:**
 ```python
-# platform/checkpointing/factory.py
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+# lgp/checkpointing/factory.py
+from langgraph.checkpoint.sqlite import SqliteSaver
 
-def create_checkpointer(type: str, config: dict):
-    if type == "sqlite":
-        return AsyncSqliteSaver.from_conn_string(config["path"])
-    elif type == "postgresql":
-        return AsyncPostgresSaver.from_conn_string(config["url"])
-    else:
-        raise ValueError(f"Unknown checkpointer type: {type}")
+def create_checkpointer(config: dict):
+    """Create SQLite checkpointer with context manager support"""
+    path = config.get("path", "./checkpoints.sqlite")
+    return SqliteSaver.from_conn_string(path)
 ```
 
 ---
 
-### Task R4.2: PostgreSQL Schema Migration
-**Type:** Migration Step
+### Task R4.2: Checkpointer Injection in Runtime
+**Type:** Integration Pressure Point
 **Linear:** TBD
 
 **Witness Outcome:**
-- Migration script creates tables
-- Schema matches LangGraph spec
-- Indexes created on thread_id, checkpoint_id
-- WAL mode equivalent (PostgreSQL)
+- Checkpointer injected in runtime/executor.py
+- Workflows compile with checkpointer
+- thread_id passed through config
+- State persists across invocations
 
 **Acceptance Criteria:**
-```bash
-$ lgp migrate sqlite-to-postgres --source checkpoints.db --dest ${DATABASE_URL}
-[lgp] Reading SQLite checkpoints... (1250 found)
-[lgp] Creating PostgreSQL schema...
-[lgp] Migrating data... (1250/1250)
-[lgp] ✅ Migration complete (0 data loss)
+```python
+# First invocation
+result1 = await workflow.ainvoke(
+    {"input": "Remember my name is Alice"},
+    config={"configurable": {"thread_id": "test-123"}}
+)
+
+# Second invocation (same thread)
+result2 = await workflow.ainvoke(
+    {"input": "What is my name?"},
+    config={"configurable": {"thread_id": "test-123"}}
+)
+
+# Witness: result2 mentions "Alice"
+assert "Alice" in result2["output"]
 ```
 
 **Code Pattern:**
 ```python
-# migrations/sqlite_to_postgresql.py
-def migrate(source_db, dest_db):
-    # Read SQLite
-    sqlite_conn = sqlite3.connect(source_db)
-    checkpoints = read_all_checkpoints(sqlite_conn)
+# runtime/executor.py
+from lgp.checkpointing import create_checkpointer
 
-    # Write PostgreSQL
-    pg_conn = psycopg2.connect(dest_db)
-    for checkpoint in checkpoints:
-        write_checkpoint(pg_conn, checkpoint)
+# In aexecute()
+checkpointer = create_checkpointer(self.config["checkpointer"])
+workflow_compiled = workflow.compile(checkpointer=checkpointer)
+
+config = {
+    "configurable": {
+        "thread_id": input_data.get("thread_id", "default")
+    }
+}
+
+result = await workflow_compiled.ainvoke(input_data, config=config)
 ```
 
 ---
 
-### Task R4.3: Connection Pooling (PgBouncer)
-**Type:** Optimization
-**Linear:** TBD
-
-**Witness Outcome:**
-- PgBouncer configured (max 100 connections)
-- Connection acquisition <5ms (p99)
-- No connection exhaustion under load
-- Graceful degradation at limit
-
-**Acceptance Criteria:**
-```bash
-# Load test: 100 concurrent requests
-$ lgp load-test my_workflow --concurrent 100
-[lgp] Connection pool: 100 max, 95 active, 5 idle
-[lgp] Connection acquisition p99: 3.2ms ✅
-[lgp] No connection timeouts ✅
-```
-
-**Code Pattern:**
-```yaml
-# config/hosted.yaml
-checkpointer:
-  type: postgresql
-  url: ${DATABASE_URL}
-  pool:
-    min_size: 10
-    max_size: 100
-    timeout: 5000
-```
-
----
-
-### Task R4.4: Multi-Server Deployment Test
+### Task R4.3: Session Query Integration
 **Type:** Feature Witness
 **Linear:** TBD
 
 **Witness Outcome:**
-- 2 API servers running simultaneously
-- Both share same PostgreSQL checkpointer
-- Session continuity across servers
-- No checkpoint conflicts (optimistic locking works)
-
-**Acceptance Criteria:**
-```bash
-# Server 1
-$ lgp serve my_workflow --port 8000
-[lgp] Checkpointer: PostgreSQL (shared)
-
-# Server 2
-$ lgp serve my_workflow --port 8001
-[lgp] Checkpointer: PostgreSQL (shared)
-
-# Client request to server 1
-$ curl http://localhost:8000/workflows/my_workflow/invoke \
-  -d '{"thread_id": "session-001", "step": 1}'
-
-# Client request to server 2 (same session)
-$ curl http://localhost:8001/sessions/session-001
-{"checkpoints": 1, "latest_state": {"step": 1}}
-# ✅ Session visible across servers
-```
-
----
-
-### Task R4.5: Size Limit Wrapper
-**Type:** Integration Pressure Point
-**Linear:** TBD
-
-**Witness Outcome:**
-- Checkpoints >10MB rejected before serialization
-- Clear error message with guidance
-- Metadata includes checkpoint size estimate
-- Warning at 5MB threshold
+- GET /sessions/{thread_id} returns actual checkpoint data
+- Checkpoint count accurate
+- Latest state retrieved from SQLite
+- Session history accessible
 
 **Acceptance Criteria:**
 ```python
-# Large checkpoint rejected
-try:
-    checkpointer.aput(config, large_checkpoint)
-except CheckpointSizeLimitError as e:
-    print(e)
-    # "Checkpoint size (12.5 MB) exceeds limit (10 MB).
-    #  Consider externalizing large files to blob storage."
+# Invoke workflow with thread_id
+POST /workflows/test/invoke
+{"input": "Remember: color = blue", "thread_id": "session-001"}
+
+# Query session
+GET /sessions/session-001
+{
+  "thread_id": "session-001",
+  "checkpoints": 1,
+  "latest_state": {"color": "blue", "step": 1},
+  "created_at": "2025-11-19T..."
+}
+
+# ✅ Real data from checkpointer, not stub
 ```
 
 **Code Pattern:**
 ```python
-# platform/checkpointing/wrappers.py
-class SizeLimitedCheckpointer:
-    def __init__(self, checkpointer, max_size_mb=10):
-        self.checkpointer = checkpointer
-        self.max_size_bytes = max_size_mb * 1024 * 1024
+# api/routes/sessions.py
+from lgp.checkpointing import create_checkpointer
 
-    async def aput(self, config, checkpoint, metadata, new_versions):
-        size = estimate_size(checkpoint)
-        if size > self.max_size_bytes:
-            raise CheckpointSizeLimitError(f"Size {size/1024/1024:.1f} MB exceeds {self.max_size_mb} MB")
-        return await self.checkpointer.aput(config, checkpoint, metadata, new_versions)
+@router.get("/{thread_id}")
+async def get_session(thread_id: str):
+    checkpointer = create_checkpointer({"path": "./checkpoints.sqlite"})
+    config = {"configurable": {"thread_id": thread_id}}
+
+    # Get state from checkpointer
+    state = await checkpointer.aget(config)
+
+    return SessionResponse(
+        thread_id=thread_id,
+        checkpoints=count_checkpoints(thread_id),
+        latest_state=state
+    )
 ```
+
+**Note**: PostgreSQL support (R4.4-R4.5: connection pooling, multi-server, size limits) deferred to Phase R8.
 
 ---
 

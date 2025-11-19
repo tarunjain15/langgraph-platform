@@ -17,6 +17,7 @@ from lgp.observability import (
     sanitize_for_dashboard
 )
 from lgp.observability.tracers import LangfuseTracer
+from lgp.checkpointing import create_checkpointer
 
 
 class WorkflowExecutor:
@@ -132,6 +133,7 @@ class WorkflowExecutor:
 
         start_time = time.time()
         workflow_name = Path(workflow_path).stem
+        checkpointer_cm = None
 
         try:
             # Load workflow module
@@ -140,13 +142,39 @@ class WorkflowExecutor:
             if self.verbose:
                 print(f"[lgp] Module loaded: {module.__name__}")
 
-            # Extract workflow
+            # Extract workflow (builder or compiled graph)
             workflow = self._extract_workflow(module)
 
             if self.verbose:
                 print(f"[lgp] Workflow extracted")
 
-            # TODO: Inject checkpointer based on config
+            # Inject checkpointer based on config
+            if self.config.get("checkpointer"):
+                checkpointer_cm = create_checkpointer(self.config["checkpointer"])
+
+                # Enter async context manager to get actual checkpointer
+                checkpointer = await checkpointer_cm.__aenter__()
+
+                # If workflow is a builder (has compile method), compile with checkpointer
+                if hasattr(workflow, 'compile'):
+                    if self.verbose:
+                        print(f"[lgp] Compiling workflow with checkpointer")
+                    workflow = workflow.compile(checkpointer=checkpointer)
+                elif self.verbose:
+                    print(f"[lgp] Workflow already compiled, checkpointer will be passed in config")
+            else:
+                checkpointer = None
+
+            # Build execution config with thread_id for state persistence
+            thread_id = input_data.get("thread_id", "default")
+            execution_config = {
+                "configurable": {
+                    "thread_id": thread_id
+                }
+            }
+
+            if self.verbose:
+                print(f"[lgp] Using thread_id: {thread_id}")
 
             # Prepare metadata and tags for Langfuse
             metadata = LangfuseTracer.get_metadata(
@@ -169,11 +197,12 @@ class WorkflowExecutor:
                     result = await self._execute_with_trace(
                         workflow,
                         input_data,
-                        workflow_name
+                        workflow_name,
+                        execution_config
                     )
             else:
                 # Execute without tracing
-                result = await workflow.ainvoke(input_data)
+                result = await workflow.ainvoke(input_data, config=execution_config)
 
             elapsed = time.time() - start_time
 
@@ -214,12 +243,21 @@ class WorkflowExecutor:
 
             raise
 
+        finally:
+            # Clean up checkpointer context manager
+            if checkpointer_cm is not None:
+                try:
+                    await checkpointer_cm.__aexit__(None, None, None)
+                except Exception:
+                    pass  # Ignore cleanup errors
+
     @observe(name="workflow_execution")
     async def _execute_with_trace(
         self,
         workflow,
         input_data: Dict[str, Any],
-        workflow_name: str
+        workflow_name: str,
+        config: Dict[str, Any]
     ):
         """Execute workflow with Langfuse trace decoration"""
-        return await workflow.ainvoke(input_data)
+        return await workflow.ainvoke(input_data, config=config)

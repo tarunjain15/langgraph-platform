@@ -66,3 +66,8 @@ workflows/config.yaml
 tmp/
 temp/
 *.tmp
+
+# SQLite journal files
+*.db-shm
+*.db-wal
+*.db-journal
