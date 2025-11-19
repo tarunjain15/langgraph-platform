@@ -19,6 +19,8 @@ from lgp.observability import (
 from lgp.observability.tracers import LangfuseTracer
 from lgp.checkpointing import create_checkpointer
 from lgp.config import load_config
+from lgp.claude_code.node_factory import create_claude_code_node
+from lgp.claude_code.session_manager import get_default_manager
 
 
 class WorkflowExecutor:
@@ -144,6 +146,85 @@ class WorkflowExecutor:
                 "Workflow module must export 'workflow', 'app', or 'create_workflow()'"
             )
 
+    async def _inject_claude_code_nodes(self, workflow, module):
+        """
+        Inject Claude Code nodes into workflow if claude_code_config is present.
+
+        Reads claude_code_config from the workflow module and dynamically creates
+        Claude Code nodes, injecting them after specified preparation nodes.
+
+        Args:
+            workflow: StateGraph builder (uncompiled)
+            module: Workflow module (may contain claude_code_config)
+
+        Returns:
+            Workflow with Claude Code nodes injected (still uncompiled)
+        """
+        # Check if module has claude_code_config
+        if not hasattr(module, 'claude_code_config'):
+            if self.verbose:
+                print("[lgp] No claude_code_config found, skipping Claude Code injection")
+            return workflow
+
+        config = module.claude_code_config
+
+        # Check if Claude Code is enabled
+        if not config.get("enabled", False):
+            if self.verbose:
+                print("[lgp] Claude Code disabled in config")
+            return workflow
+
+        agents = config.get("agents", [])
+        if not agents:
+            if self.verbose:
+                print("[lgp] No agents configured in claude_code_config")
+            return workflow
+
+        if self.verbose:
+            print(f"[lgp] Injecting {len(agents)} Claude Code nodes...")
+
+        # Get MCP session manager (not the session itself - that's created per invocation)
+        mcp_manager = get_default_manager()
+
+        # Inject each agent
+        # Agents are configured with inject_after and inject_before
+        # We need to create: inject_after → agent → inject_before flow
+        for agent_config in agents:
+            role_name = agent_config.get("role_name")
+            repository = agent_config.get("repository")
+            inject_after = agent_config.get("inject_after")
+            inject_before = agent_config.get("inject_before")  # Next node in flow
+            timeout = agent_config.get("timeout", 120000)
+
+            if not all([role_name, repository, inject_after]):
+                print(f"[lgp] Warning: Incomplete agent config, skipping: {agent_config}")
+                continue
+
+            # Create Claude Code node
+            node_name = f"{role_name}_agent"
+            claude_code_node = create_claude_code_node(
+                config={
+                    "role_name": role_name,
+                    "repository": repository,
+                    "timeout": timeout
+                },
+                mcp_manager=mcp_manager
+            )
+
+            # Add node to graph
+            workflow.add_node(node_name, claude_code_node)
+
+            # Add edges: inject_after → agent → inject_before
+            workflow.add_edge(inject_after, node_name)
+
+            if inject_before:
+                workflow.add_edge(node_name, inject_before)
+
+            if self.verbose:
+                print(f"[lgp]   ✅ Injected {node_name} ({inject_after} → {node_name} → {inject_before or 'END'})")
+
+        return workflow
+
     def execute(self, workflow_path: str, input_data: Optional[Dict[str, Any]] = None):
         """Execute workflow (synchronous entry point)"""
         if input_data is None:
@@ -182,6 +263,9 @@ class WorkflowExecutor:
 
             if self.verbose:
                 print(f"[lgp] Workflow extracted")
+
+            # Inject Claude Code nodes if configured
+            workflow = await self._inject_claude_code_nodes(workflow, module)
 
             # Inject checkpointer based on config
             if self.config.get("checkpointer"):

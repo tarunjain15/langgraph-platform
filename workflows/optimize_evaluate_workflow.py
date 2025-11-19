@@ -224,16 +224,22 @@ async def check_convergence(state: OptimizeEvaluateState) -> OptimizeEvaluateSta
         f"Changed: {optimizer_output[:100]}... | Result: {evaluator_output[:100]}..."
     ]
 
-    # Check convergence
-    converged = goal_achieved or (iteration + 1 >= max_iterations)
-
-    # Prepare convergence message
-    if goal_achieved:
-        convergence_msg = f"✅ Goal achieved in {iteration + 1} iterations!"
-    elif iteration + 1 >= max_iterations:
-        convergence_msg = f"⏱️ Max iterations ({max_iterations}) reached. Stopping."
+    # Safety: If no optimizer/evaluator output, we're in test mode without Claude Code nodes
+    # Converge immediately to prevent infinite loop
+    if not optimizer_output and not evaluator_output and iteration > 0:
+        converged = True
+        convergence_msg = "⚠️ No agent output detected. Workflow running without Claude Code nodes. Stopping."
     else:
-        convergence_msg = f"🔄 Continuing... ({iteration + 1}/{max_iterations} iterations)"
+        # Check convergence
+        converged = goal_achieved or (iteration + 1 >= max_iterations)
+
+        # Prepare convergence message
+        if goal_achieved:
+            convergence_msg = f"✅ Goal achieved in {iteration + 1} iterations!"
+        elif iteration + 1 >= max_iterations:
+            convergence_msg = f"⏱️ Max iterations ({max_iterations}) reached. Stopping."
+        else:
+            convergence_msg = f"🔄 Continuing... ({iteration + 1}/{max_iterations} iterations)"
 
     return {
         **state,
@@ -287,12 +293,17 @@ def create_workflow():
     graph.add_node("check_convergence", check_convergence)
 
     # Define flow
+    # NOTE: Claude Code agent nodes will be injected by executor
+    # The executor will create the complete flow:
+    #   initialize → prepare_optimizer → optimizer_agent → prepare_evaluator → evaluator_agent → check_convergence
+
     graph.set_entry_point("initialize")
     graph.add_edge("initialize", "prepare_optimizer")
-    # optimizer_agent injected here by executor
-    graph.add_edge("prepare_optimizer", "prepare_evaluator")
-    # evaluator_agent injected here by executor
-    graph.add_edge("prepare_evaluator", "check_convergence")
+
+    # Do NOT add edges that will be replaced by agent injection
+    # The executor will add:
+    #   - prepare_optimizer → optimizer_agent → prepare_evaluator
+    #   - prepare_evaluator → evaluator_agent → check_convergence
 
     # Conditional edge: loop or end
     graph.add_conditional_edges(
@@ -320,13 +331,15 @@ claude_code_config = {
             "role_name": "optimizer",
             "repository": "optimization-workspace",  # Isolated workspace for code changes
             "timeout": 120000,                       # 2 minutes per optimization attempt
-            "inject_after": "prepare_optimizer"      # Injected after prepare_optimizer node
+            "inject_after": "prepare_optimizer",     # Injected after prepare_optimizer node
+            "inject_before": "prepare_evaluator"     # Connects to prepare_evaluator
         },
         {
             "role_name": "evaluator",
             "repository": "evaluation-workspace",    # Isolated workspace for testing
             "timeout": 120000,                       # 2 minutes per evaluation
-            "inject_after": "prepare_evaluator"      # Injected after prepare_evaluator node
+            "inject_after": "prepare_evaluator",     # Injected after prepare_evaluator node
+            "inject_before": "check_convergence"     # Connects to check_convergence
         }
     ]
 }
