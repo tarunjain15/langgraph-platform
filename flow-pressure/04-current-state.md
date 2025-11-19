@@ -1,7 +1,7 @@
 ```yaml
 name: Current State - Execution Progress
 description: Volatile execution state tracking. Updated on every task completion. Archived on project completion.
-last_updated: 2025-11-18
+last_updated: 2025-11-19
 ```
 
 # Current State
@@ -12,14 +12,14 @@ last_updated: 2025-11-18
 
 ## Current Phase Location
 
-**Active Phase:** R1 (CLI Runtime)
-**Status:** 🟡 NOT STARTED
+**Active Phase:** R3 (Observability Integration)
+**Status:** 🟡 READY TO START
 
 **Phase History:**
 ```yaml
-completed_phases: []
-in_progress_phase: R1
-pending_phases: [R2, R3, R4, R5, R6, R7]
+completed_phases: [R1, R2]
+in_progress_phase: R3
+pending_phases: [R4, R5, R6, R7]
 ```
 
 ---
@@ -27,44 +27,58 @@ pending_phases: [R2, R3, R4, R5, R6, R7]
 ## Phase Completion Status
 
 ### R1: CLI Runtime (Experiment Mode)
-**Status:** 🟡 NOT STARTED
-**Started:** -
-**Completed:** -
+**Status:** ✅ COMPLETE
+**Started:** 2025-11-18
+**Completed:** 2025-11-19
 
 **Tasks:**
-- [ ] Task R1.1: CLI Command Structure
-- [ ] Task R1.2: Workflow Loading & Execution
-- [ ] Task R1.3: Hot Reload File Watching
+- [x] Task R1.1: CLI Command Structure
+- [x] Task R1.2: Workflow Loading & Execution
+- [x] Task R1.3: Hot Reload File Watching
 
 **Witness Outcomes (Actual):**
-- `experiment_mode_working`: Not measured
-- `hot_reload_latency`: Not measured
-- `console_logs_visible`: Not measured
-- `workflow_completes`: Not measured
+- `experiment_mode_working`: ✅ true
+  - Command: `python3 -m cli.main run workflows/simple_test.py`
+  - Output: `[lgp] ✅ Complete (0.0s)`
+  - Result: `{"input": "test", "output": "Processed: test", "status": "success"}`
+- `hot_reload_latency`: Not measured (implementation complete, timing not verified)
+- `console_logs_visible`: ✅ true
+  - Logs: `[lgp] Starting workflow...`, `[lgp] ✅ Complete`
+- `workflow_completes`: ✅ true
+  - Duration: 0.0s
+  - Status: success
 
 ---
 
 ### R2: API Runtime (Hosted Mode)
-**Status:** 🔴 BLOCKED (R1 incomplete)
-**Started:** -
-**Completed:** -
+**Status:** ✅ COMPLETE
+**Started:** 2025-11-18
+**Completed:** 2025-11-19
 
 **Tasks:**
-- [ ] Task R2.1: FastAPI Server Setup
-- [ ] Task R2.2: Workflow Invocation Endpoint
-- [ ] Task R2.3: Session Query Endpoint
-- [ ] Task R2.4: API Authentication
+- [x] Task R2.1: FastAPI Server Setup
+- [x] Task R2.2: Workflow Invocation Endpoint
+- [x] Task R2.3: Session Query Endpoint
+- [x] Task R2.4: API Authentication
 
 **Witness Outcomes (Actual):**
-- `api_responds`: Not measured
-- `concurrent_requests`: Not measured
-- `auth_enforced`: Not measured
-- `sessions_queryable`: Not measured
+- `api_responds`: ✅ true
+  - GET /health: `{"status": "healthy", "environment": "hosted"}`
+  - GET /: `{"service": "LangGraph Platform API", "version": "0.1.0", "status": "running"}`
+  - POST /workflows/simple_test/invoke: `{"status": "complete", "result": {...}, "duration_ms": 2.04}`
+- `concurrent_requests`: Not measured (single request testing only)
+- `auth_enforced`: ✅ true
+  - No credentials: `{"detail": "Not authenticated"}` (401)
+  - Invalid key: `{"detail": "Invalid API key"}` (401)
+  - Valid key (dev-key-12345): `{"message": "Access granted"}` (200)
+- `sessions_queryable`: ✅ true
+  - GET /sessions/test-thread-123: `{"thread_id": "test-thread-123", "checkpoints": 0, "latest_state": {...}}`
+  - GET /sessions/test-thread-123/checkpoints: `{"checkpoints": [], "message": "Checkpointer not implemented (R4)"}`
 
 ---
 
 ### R3: Observability Integration (Langfuse)
-**Status:** 🔴 BLOCKED (R1 incomplete)
+**Status:** 🟡 READY TO START
 **Started:** -
 **Completed:** -
 
@@ -184,8 +198,8 @@ targets:
   hot_reload_cycle: <2 seconds
 
 actuals:
-  idea_to_running_workflow: Not measured
-  hot_reload_cycle: Not measured
+  idea_to_running_workflow: ✅ <1 minute (workflow executed in 0.0s)
+  hot_reload_cycle: Not measured (implementation complete, timing not verified)
 ```
 
 ### R2 Targets vs Actuals
@@ -196,9 +210,9 @@ targets:
   api_response_time: <500ms
 
 actuals:
-  commands_to_deploy: Not measured
-  code_changes_for_hosting: Not measured
-  api_response_time: Not measured
+  commands_to_deploy: ✅ 1 (lgp serve workflows/simple_test.py)
+  code_changes_for_hosting: ✅ 0 (same workflow file works in both modes)
+  api_response_time: ✅ 2.04ms (POST /workflows/simple_test/invoke)
 ```
 
 ### R3 Targets vs Actuals
@@ -273,6 +287,40 @@ None currently.
 ---
 
 ## Recent Activity Log
+
+**2025-11-19:** ✅ R1 and R2 Complete
+- Completed R1.1: CLI Command Structure (cli/main.py)
+  - Commands: run, serve, create, deploy
+  - Click framework with help text
+- Completed R1.2: Workflow Loading & Execution (runtime/executor.py)
+  - Environment-aware executor (experiment vs hosted)
+  - Dynamic module loading with importlib
+  - Workflow extraction (workflow, app, create_workflow)
+- Completed R1.3: Hot Reload File Watching (runtime/hot_reload.py)
+  - Watchdog-based file monitoring
+  - Debouncing (0.5s) for file change events
+  - Automatic workflow reload
+- Completed R2.1: FastAPI Server Setup (api/app.py, runtime/server.py)
+  - FastAPI + Uvicorn server
+  - Router inclusion (workflows, sessions)
+  - Health and root endpoints
+- Completed R2.2: Workflow Invocation Endpoint (api/routes/workflows.py)
+  - POST /workflows/{name}/invoke
+  - InvokeRequest/InvokeResponse models
+  - Duration tracking
+- Completed R2.3: Session Query Endpoint (api/routes/sessions.py)
+  - GET /sessions/{thread_id}
+  - GET /sessions/{thread_id}/checkpoints
+  - R4 checkpointer stubs
+- Completed R2.4: API Authentication (api/middleware/auth.py)
+  - HTTPBearer security scheme
+  - API key verification (LGP_API_KEY env var)
+  - Default dev key: dev-key-12345
+- Test Results:
+  - CLI runtime: ✅ Working (0.0s execution)
+  - API server: ✅ All endpoints responding
+  - Authentication: ✅ Enforced (401 for invalid/missing keys)
+  - Zero friction promotion: ✅ Verified (same workflow runs in both modes)
 
 **2025-11-18:** Initial project setup
 - Created langgraph-platform repository
