@@ -79,6 +79,7 @@ class LangfuseTracer:
     def get_metadata(
         workflow_name: str,
         environment: str,
+        uses_claude_code: bool = False,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -87,6 +88,7 @@ class LangfuseTracer:
         Args:
             workflow_name: Name of the workflow being executed
             environment: Runtime environment (experiment/hosted)
+            uses_claude_code: Whether workflow uses Claude Code nodes
             **kwargs: Additional metadata fields
 
         Returns:
@@ -98,26 +100,43 @@ class LangfuseTracer:
             "runtime_version": "0.1.0",
             "repository": "langgraph-platform",
         }
+
+        # Add cost model metadata for Claude Code workflows
+        if uses_claude_code:
+            metadata.update({
+                "cost_model": "fixed_subscription",
+                "session_continuity": "enabled",
+                "monthly_cost": 20.00,  # Claude Pro subscription
+                "cost_type": "predictable"
+            })
+
         metadata.update(kwargs)
         return metadata
 
     @staticmethod
-    def get_tags(workflow_name: str, environment: str) -> list[str]:
+    def get_tags(workflow_name: str, environment: str, uses_claude_code: bool = False) -> list[str]:
         """
         Generate standardized tags for trace filtering.
 
         Args:
             workflow_name: Name of the workflow
             environment: Runtime environment
+            uses_claude_code: Whether workflow uses Claude Code nodes
 
         Returns:
             List of tags for Langfuse dashboard filtering
         """
-        return [
+        tags = [
             "langgraph-platform",
             f"workflow:{workflow_name}",
             f"env:{environment}",
         ]
+
+        if uses_claude_code:
+            tags.append("claude-code")
+            tags.append("stateful-sessions")
+
+        return tags
 
 
 # Convenience functions
