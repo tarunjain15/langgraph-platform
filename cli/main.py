@@ -86,10 +86,27 @@ def create(name: str, template: str):
     Examples:
         lgp create my_workflow
         lgp create research_pipeline --template multi_agent
+        lgp create claude_workflow --template with_claude_code
     """
+    from cli.commands.create import create_workflow_from_template
+
     click.echo(f"[lgp] Creating workflow: {name}")
     click.echo(f"[lgp] Template: {template}")
-    click.echo(f"[lgp] ⚠️  Not implemented yet (R6)")
+    click.echo()
+
+    # Create workflow
+    result = create_workflow_from_template(name, template)
+
+    if result["success"]:
+        click.echo(f"✅ Created: {result['workflow_path']}")
+        click.echo()
+        click.echo("Next steps:")
+        click.echo(f"  1. Edit your workflow: {result['workflow_path']}")
+        click.echo(f"  2. Run: lgp run workflows/{name}.py")
+        click.echo(f"  3. Serve: lgp serve workflows/{name}.py")
+    else:
+        click.echo(f"❌ Error: {result['message']}")
+        raise click.Abort()
 
 
 @cli.command()
@@ -110,13 +127,16 @@ def deploy(workflow: str):
 def templates():
     """List available workflow templates"""
     click.echo("Available Templates:")
-    click.echo("  basic             Simple workflow with one agent")
-    click.echo("  with_claude_code  Workflow using Claude Code nodes")
-    click.echo("  multi_agent       3-agent pipeline (research → write → review)")
-    click.echo("  data_pipeline     CSV processing workflow")
-    click.echo("  custom            Empty template for custom workflows")
     click.echo()
-    click.echo("⚠️  Template creation not implemented yet (R6)")
+    click.echo("  basic             ⭐ Simple single-node workflow")
+    click.echo("  multi_agent       ⭐⭐ 3-agent pipeline (research → write → review)")
+    click.echo("  with_claude_code  ⭐⭐⭐ Stateful Claude Code agents")
+    click.echo()
+    click.echo("Usage:")
+    click.echo("  lgp create my_workflow --template basic")
+    click.echo()
+    click.echo("Documentation:")
+    click.echo("  See templates/README.md for detailed guide")
 
 
 if __name__ == '__main__':
