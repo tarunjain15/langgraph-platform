@@ -974,3 +974,74 @@ async def execute_with_retry(workflow, state, max_retries=3):
 Task definitions, witness outcomes, and acceptance criteria do NOT change once written (unless structural error found).
 
 **This document will be readable decades from now.**
+
+---
+
+## Parking Decision (R6.5 → R7)
+
+**Date:** 2025-11-19
+**Status:** ✅ PARKED AT R6.5
+
+### Truth Shift Analysis
+
+R1 through R6.5 delivered a complete LangGraph runtime that satisfies all sacred constraints and core promises. The platform enables rapid workflow experimentation and production hosting with zero friction promotion.
+
+### Evidence of Parkable Foundation
+
+**1. Sacred Primitive Operational:**
+- Environment-isolated execution engine ✅
+- Experiment mode (SQLite, console, hot reload) ✅
+- Hosted mode (API server, authentication, observability) ✅
+
+**2. All 5 Constraints Satisfied:**
+- ENVIRONMENT_ISOLATION: Workflows run unchanged in both modes ✅
+- CONFIG_DRIVEN_INFRASTRUCTURE: YAML configs (R6.5), not hardcoded ✅
+- HOT_RELOAD_CONTINUITY: <2s reload cycle implemented ✅
+- ZERO_FRICTION_PROMOTION: 0 code changes experiment→hosted ✅
+- WITNESS_BASED_COMPLETION: Observable outcomes for all phases ✅
+
+**3. Success Metrics Achieved (3/4):**
+- idea_to_running_workflow: <1 min (target: <5 min) ✅
+- hot_reload_cycle: ~1.5s (target: <2s) ✅
+- code_changes_for_hosting: 0 (target: 0) ✅
+- commands_to_deploy: Manual (target: 1) ❌ [R7 feature]
+
+**4. Pressure Resolution:**
+- Configuration sprawl resolved by R6.5 YAML system ✅
+- All architectural pressures cleared ✅
+- Clean foundation for future phases ✅
+
+### R7 Status: Optional Enhancement
+
+R7 (Production Mastery) remains unimplemented but is **optional operational convenience**, not foundational capability.
+
+**R7 Would Add:**
+- One-command cloud deployment (`lgp deploy`)
+- Auto-scaling configuration
+- Anomaly detection and alerting
+- Self-healing restart mechanisms
+
+**What Users Can Do Today Without R7:**
+- Run `lgp serve` on their own server (production-ready)
+- Use Docker manually for containerization
+- Deploy via their own CI/CD pipelines
+- Configure monitoring through standard DevOps tools
+
+**Why R7 is Optional:**
+- Core promise delivered: "Rapid experimentation + hosting runtime" ✅
+- Sacred primitive complete: "Environment-isolated execution engine" ✅
+- Zero breaking changes required: R7 is additive, not corrective ✅
+- Parking preserves foundation: R7 can build later without changes ✅
+
+### Parking Criteria Met
+
+From discipline.md parking requirements:
+1. "No active pressure unresolved" ✅
+2. "All completed phases witnessed" ✅ (R1-R6.5)
+3. "Sacred constraints honored in code" ✅
+4. "Documentation exists for users" ✅ (docs/README.md, docs/configuration.md)
+5. "Next phase can start cleanly" ✅ (R7 can build on R6.5 without changes)
+
+### Recommendation
+
+**PARK at R6.5.** The platform is production-ready for users who can deploy manually. R7 adds deployment automation convenience but is not required for the runtime primitive to function.
