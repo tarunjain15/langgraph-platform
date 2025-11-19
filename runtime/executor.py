@@ -10,6 +10,13 @@ import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 import sys
+from langfuse import observe, propagate_attributes
+from lgp.observability import (
+    configure_langfuse,
+    flush_traces,
+    sanitize_for_dashboard
+)
+from lgp.observability.tracers import LangfuseTracer
 
 
 class WorkflowExecutor:
@@ -19,6 +26,12 @@ class WorkflowExecutor:
         self.environment = environment
         self.verbose = verbose
         self.config = self._load_config(environment)
+
+        # Configure Langfuse if enabled
+        if self.config.get("observability", {}).get("langfuse", False):
+            configure_langfuse(enabled=True)
+        else:
+            configure_langfuse(enabled=False)
 
     def _load_config(self, environment: str) -> Dict[str, Any]:
         """Load environment-specific configuration"""
@@ -118,6 +131,7 @@ class WorkflowExecutor:
             print(f"[lgp] Executing workflow...")
 
         start_time = time.time()
+        workflow_name = Path(workflow_path).stem
 
         try:
             # Load workflow module
@@ -133,21 +147,55 @@ class WorkflowExecutor:
                 print(f"[lgp] Workflow extracted")
 
             # TODO: Inject checkpointer based on config
-            # TODO: Inject tracer based on config
 
-            # Execute workflow
+            # Prepare metadata and tags for Langfuse
+            metadata = LangfuseTracer.get_metadata(
+                workflow_name=workflow_name,
+                environment=self.environment,
+                workflow_path=workflow_path
+            )
+            tags = LangfuseTracer.get_tags(
+                workflow_name=workflow_name,
+                environment=self.environment
+            )
+
+            # Execute workflow with Langfuse tracing
             if self.verbose:
                 print(f"[lgp] Invoking workflow...")
 
-            result = await workflow.ainvoke(input_data)
+            if LangfuseTracer.is_enabled():
+                # Wrap execution in Langfuse trace
+                with propagate_attributes(metadata=metadata, tags=tags):
+                    result = await self._execute_with_trace(
+                        workflow,
+                        input_data,
+                        workflow_name
+                    )
+            else:
+                # Execute without tracing
+                result = await workflow.ainvoke(input_data)
 
             elapsed = time.time() - start_time
 
+            # Sanitize result for dashboard
+            if LangfuseTracer.is_enabled():
+                sanitized_result, sanitization_metadata = sanitize_for_dashboard(result)
+                if sanitization_metadata:
+                    if self.verbose:
+                        print(f"[lgp] Output sanitized: {sanitization_metadata}")
+            else:
+                sanitized_result = result
+
             if self.verbose:
                 print(f"[lgp] Execution complete")
-                print(f"[lgp] Result: {result}")
+                print(f"[lgp] Result: {sanitized_result}")
 
             print(f"[lgp] ✅ Complete ({elapsed:.1f}s)")
+
+            # Flush traces to Langfuse
+            if LangfuseTracer.is_enabled():
+                flush_traces()
+
             print()
 
             return result
@@ -159,4 +207,19 @@ class WorkflowExecutor:
             if self.verbose:
                 import traceback
                 traceback.print_exc()
+
+            # Flush traces even on error
+            if LangfuseTracer.is_enabled():
+                flush_traces()
+
             raise
+
+    @observe(name="workflow_execution")
+    async def _execute_with_trace(
+        self,
+        workflow,
+        input_data: Dict[str, Any],
+        workflow_name: str
+    ):
+        """Execute workflow with Langfuse trace decoration"""
+        return await workflow.ainvoke(input_data)
