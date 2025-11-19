@@ -17,7 +17,7 @@ last_updated: 2025-11-19
 
 **Phase History:**
 ```yaml
-completed_phases: [R1, R2, R3, R4, R5, R6]
+completed_phases: [R1, R2, R3, R4, R5, R6, R6.5]
 in_progress_phase: R7
 pending_phases: []
 ```
@@ -233,6 +233,81 @@ pending_phases: []
    - ✅ lgp create test_claude --template with_claude_code (success)
    - ✅ Duplicate detection works (rejects existing workflow names)
    - ✅ Invalid template handling (shows available templates)
+
+---
+
+### R6.5: Configuration Infrastructure (Externalized Settings)
+**Status:** ✅ COMPLETE
+**Started:** 2025-11-19
+**Completed:** 2025-11-19
+
+**Tasks:**
+- [x] Task R6.5.1: Environment Config Files
+- [x] Task R6.5.2: Config Loader Implementation
+- [x] Task R6.5.3: Executor Integration
+
+**Witness Outcomes (Actual):**
+- `config_externalized`: ✅ true
+  - config/experiment.yaml created with all settings (checkpointer, observability, runtime, features)
+  - config/hosted.yaml created with production settings (postgresql, langfuse, server, auth)
+  - Comments and documentation in YAML files
+  - Witness: config files exist and contain structured YAML
+- `config_loading`: ✅ true
+  - lgp/config/loader.py implemented with ConfigLoader class
+  - YAML reading with pyyaml
+  - Environment variable substitution (${VAR_NAME} syntax)
+  - Validation of required keys
+  - Witness: load_config('experiment') returns dict with expected structure
+- `executor_integration`: ✅ true
+  - runtime/executor.py uses load_config() instead of hardcoded dicts
+  - Backward compatible fallback to legacy config if YAML missing
+  - Clear error messages for invalid configs
+  - Witness: lgp run workflows/basic_workflow.py executes successfully
+- `env_var_substitution`: ✅ true
+  - ${DATABASE_URL} in hosted.yaml correctly reads from environment
+  - ${API_KEY} substitution works
+  - Witness: DATABASE_URL="test" load_config('hosted') returns "test" in checkpointer.url
+- `config_validation`: ✅ true
+  - Missing required keys rejected with ValueError
+  - Invalid checkpointer type rejected
+  - Clear error messages with config file name
+  - Witness: Invalid config raises ValueError with helpful message
+
+**Activity Log:**
+1. Created config/experiment.yaml
+   - Externalized hardcoded settings from executor.py lines 40-52
+   - Added checkpointer, observability, runtime, features sections
+   - Included inline comments for documentation
+2. Created config/hosted.yaml
+   - Production settings with postgresql, langfuse enabled
+   - Server and auth configuration
+   - Environment variable references (${DATABASE_URL}, ${API_KEY})
+   - Feature flags for R7 capabilities
+3. Implemented lgp/config/loader.py
+   - ConfigLoader class with YAML reading
+   - Environment variable substitution with ${VAR:default} syntax
+   - Recursive substitution in nested dicts
+   - Config validation (required keys, valid types)
+   - Auto-detection of project root
+4. Created lgp/config/__init__.py (module exports)
+5. Updated runtime/executor.py
+   - Replaced hardcoded _load_config() with load_config() call
+   - Added backward compatibility fallback (_legacy_config)
+   - Enhanced error handling and logging
+6. Verified all functionality:
+   - ✅ Config loading: experiment and hosted configs load correctly
+   - ✅ Env substitution: DATABASE_URL and API_KEY work
+   - ✅ Validation: Invalid configs rejected
+   - ✅ Backward compatibility: Workflows run without issues
+   - ✅ Executor integration: lgp run uses YAML configs
+
+**Configuration Pressure Resolved:**
+- Before R6.5: 3 conflicting config layers (hardcoded, distributed, phantom)
+- After R6.5: 1 unified config system (YAML files)
+- Hardcoded dicts removed (kept as legacy fallback)
+- Config directory now populated with working files
+- Environment-specific settings externalized
+- R7 (Production) can now add deployment configs without code changes
 
 ---
 

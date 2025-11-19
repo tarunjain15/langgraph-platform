@@ -18,6 +18,7 @@ from lgp.observability import (
 )
 from lgp.observability.tracers import LangfuseTracer
 from lgp.checkpointing import create_checkpointer
+from lgp.config import load_config
 
 
 class WorkflowExecutor:
@@ -35,8 +36,38 @@ class WorkflowExecutor:
             configure_langfuse(enabled=False)
 
     def _load_config(self, environment: str) -> Dict[str, Any]:
-        """Load environment-specific configuration"""
-        # TODO: Load from config/experiment.yaml or config/hosted.yaml
+        """
+        Load environment-specific configuration from YAML files.
+
+        Loads from config/experiment.yaml or config/hosted.yaml with:
+        - Environment variable substitution
+        - Validation
+        - Merge with .env secrets
+
+        Args:
+            environment: Environment name (experiment/hosted)
+
+        Returns:
+            Dictionary with configuration
+
+        Raises:
+            ValueError: If environment is invalid or config is malformed
+            FileNotFoundError: If config file doesn't exist
+        """
+        try:
+            config = load_config(environment)
+            return config
+        except FileNotFoundError as e:
+            # Fallback to hardcoded config if YAML files don't exist
+            # This maintains backward compatibility
+            print(f"[lgp] Warning: {e}")
+            print(f"[lgp] Using hardcoded configuration (legacy mode)")
+            return self._legacy_config(environment)
+        except Exception as e:
+            raise ValueError(f"Failed to load config for {environment}: {e}")
+
+    def _legacy_config(self, environment: str) -> Dict[str, Any]:
+        """Legacy hardcoded configuration (backward compatibility)"""
         if environment == "experiment":
             return {
                 "checkpointer": {
@@ -48,22 +79,26 @@ class WorkflowExecutor:
                     "console": True,
                     "langfuse": False
                 },
-                "hot_reload": True
+                "runtime": {
+                    "hot_reload": True
+                }
             }
         elif environment == "hosted":
             return {
                 "checkpointer": {
                     "type": "postgresql",
-                    "url": None,  # Will be from env var
+                    "url": None,
                     "pool_size": 10
                 },
                 "observability": {
                     "console": False,
                     "langfuse": True
                 },
-                "workers": 4,
+                "server": {
+                    "workers": 4
+                },
                 "auth": {
-                    "api_key": None  # Will be from env var
+                    "api_key": None
                 }
             }
         else:

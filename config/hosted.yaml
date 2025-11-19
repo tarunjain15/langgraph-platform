@@ -1,0 +1,43 @@
+# LangGraph Platform - Hosted Environment Configuration
+#
+# This configuration is used for production API server (lgp serve).
+# Changes to this file require server restart.
+#
+# Secrets (API keys, passwords, database URLs) should be in .env file.
+
+# State Persistence (R4)
+checkpointer:
+  type: postgresql                # postgresql for production
+  # Database URL from environment variable
+  # Set DATABASE_URL in .env: postgresql://user:pass@host:5432/dbname
+  url: ${DATABASE_URL}            # Reference to .env variable
+  pool_size: 10                   # Connection pool size
+  pool_timeout: 30                # Connection timeout (seconds)
+
+# Observability (R3)
+observability:
+  console: false                  # Disable console logs in production
+  langfuse: true                  # Enable Langfuse tracing
+  # Required .env variables:
+  # - LANGFUSE_SECRET_KEY
+  # - LANGFUSE_PUBLIC_KEY
+  # - LANGFUSE_BASE_URL (optional, defaults to cloud.langfuse.com)
+
+# Server Settings (R2)
+server:
+  workers: 4                      # Number of worker processes
+  timeout: 300                    # Request timeout (seconds)
+  max_requests: 1000              # Max requests per worker before restart
+
+# Authentication (R2)
+auth:
+  enabled: true                   # Require API key authentication
+  # Set API_KEY in .env file
+  api_key: ${API_KEY}             # Reference to .env variable
+
+# Feature Flags
+features:
+  claude_code: true               # Enable Claude Code node support (R5)
+  templates: true                 # Enable workflow templates (R6)
+  rate_limiting: true             # Enable rate limiting (R7)
+  auto_scaling: false             # Auto-scaling (R7, not implemented)

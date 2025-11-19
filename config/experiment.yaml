@@ -1,0 +1,30 @@
+# LangGraph Platform - Experiment Environment Configuration
+#
+# This configuration is used for local development and experimentation.
+# Changes to this file require restart of lgp run/serve commands.
+#
+# Secrets (API keys, passwords) should be in .env file, not here.
+
+# State Persistence (R4)
+checkpointer:
+  type: sqlite                    # sqlite or postgresql
+  path: ./checkpoints.db          # SQLite database path
+  async: true                     # Use async checkpointer
+
+# Observability (R3)
+observability:
+  console: true                   # Print logs to console
+  langfuse: false                 # Disable Langfuse tracing in experiment mode
+  # To enable Langfuse:
+  # 1. Set langfuse: true
+  # 2. Add LANGFUSE_SECRET_KEY and LANGFUSE_PUBLIC_KEY to .env
+
+# Runtime Settings (R1)
+runtime:
+  hot_reload: true                # Enable file watching and auto-reload
+  verbose: false                  # Show detailed execution logs
+
+# Feature Flags
+features:
+  claude_code: true               # Enable Claude Code node support (R5)
+  templates: true                 # Enable workflow templates (R6)
