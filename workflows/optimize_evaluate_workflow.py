@@ -27,6 +27,7 @@ INPUT STATE:
 
 from typing import TypedDict, List, Dict, Any
 from langgraph.graph import StateGraph, END
+from langfuse import observe
 
 
 class OptimizeEvaluateState(TypedDict):
@@ -47,15 +48,15 @@ class OptimizeEvaluateState(TypedDict):
     iteration: int                  # Current iteration number
     converged: bool                 # Has goal been achieved?
 
-    # Agent 1: Optimizer
-    optimizer_task: str             # Task for optimizer agent
-    optimizer_output: str           # Code modifications made
-    optimizer_session_id: str       # Session continuity for optimizer
+    # Agent 1: Writer
+    writer_task: str                # Task for writer agent
+    writer_output: str              # Code modifications made
+    writer_session_id: str          # Session continuity for writer
 
-    # Agent 2: Evaluator
-    evaluator_task: str             # Task for evaluator agent
-    evaluator_output: str           # Test results and metrics
-    evaluator_session_id: str       # Session continuity for evaluator
+    # Agent 2: Validator
+    validator_task: str             # Task for validator agent
+    validator_output: str           # Test results and metrics
+    validator_session_id: str       # Session continuity for validator
 
     # Convergence tracking
     test_results: Dict[str, Any]    # Latest test results (pass/fail, metrics)
@@ -65,6 +66,7 @@ class OptimizeEvaluateState(TypedDict):
     current_step: str               # For observability
 
 
+@observe(name="initialize_optimization")
 async def initialize_optimization(state: OptimizeEvaluateState) -> OptimizeEvaluateState:
     """
     Initialize the optimization loop.
@@ -92,7 +94,7 @@ async def initialize_optimization(state: OptimizeEvaluateState) -> OptimizeEvalu
         "test_results": {"status": "not_run"},
         "current_step": "initialization",
         "max_iterations": max_iterations,
-        "optimizer_task": f"""Initialize optimization for: {target_file}
+        "writer_task": f"""Initialize optimization for: {target_file}
 
 Goal: {optimization_goal}
 
@@ -103,6 +105,7 @@ DO NOT modify code yet. Just analyze and report what you found."""
     }
 
 
+@observe(name="prepare_optimizer_task")
 async def prepare_optimizer_task(state: OptimizeEvaluateState) -> OptimizeEvaluateState:
     """
     Prepare task for optimizer agent based on previous evaluation results.
@@ -117,7 +120,7 @@ async def prepare_optimizer_task(state: OptimizeEvaluateState) -> OptimizeEvalua
     target_file = state.get("target_file", "")
     optimization_goal = state.get("optimization_goal", "")
     test_results = state.get("test_results", {})
-    evaluator_output = state.get("evaluator_output", "No previous evaluation")
+    validator_output = state.get("validator_output", "No previous validation")  # Changed from evaluator_output
     optimization_history = state.get("optimization_history", [])
 
     history_summary = "\n".join([f"  - Iteration {i}: {change}" for i, change in enumerate(optimization_history)])
@@ -129,8 +132,8 @@ Goal: {optimization_goal}
 Current iteration: {iteration + 1}
 Previous test results: {test_results.get('status', 'unknown')}
 
-Evaluator feedback from last iteration:
-{evaluator_output}
+Validator feedback from last iteration:
+{validator_output}
 
 Optimization history:
 {history_summary if history_summary else "  (no previous attempts)"}
@@ -146,11 +149,12 @@ Focus on: {optimization_goal}
 
     return {
         **state,
-        "optimizer_task": task,
+        "writer_task": task,  # Matches role_name: "writer"
         "current_step": f"preparing_optimization_{iteration + 1}"
     }
 
 
+@observe(name="prepare_evaluator_task")
 async def prepare_evaluator_task(state: OptimizeEvaluateState) -> OptimizeEvaluateState:
     """
     Prepare task for evaluator agent to test optimizer's changes.
@@ -164,15 +168,15 @@ async def prepare_evaluator_task(state: OptimizeEvaluateState) -> OptimizeEvalua
     iteration = state.get("iteration", 0)
     target_file = state.get("target_file", "")
     optimization_goal = state.get("optimization_goal", "")
-    optimizer_output = state.get("optimizer_output", "No optimizer output")
+    writer_output = state.get("writer_output", "No writer output")  # Changed from optimizer_output
 
     task = f"""Evaluate optimized code in: {target_file}
 
 Iteration: {iteration + 1}
 Optimization goal: {optimization_goal}
 
-What the optimizer changed:
-{optimizer_output}
+What the writer changed:
+{writer_output}
 
 TASK:
 1. Run all tests for {target_file}
@@ -189,11 +193,12 @@ Be specific about numbers and metrics.
 
     return {
         **state,
-        "evaluator_task": task,
+        "validator_task": task,  # Matches role_name: "validator"
         "current_step": f"preparing_evaluation_{iteration + 1}"
     }
 
 
+@observe(name="check_convergence")
 async def check_convergence(state: OptimizeEvaluateState) -> OptimizeEvaluateState:
     """
     Check if optimization goal has been achieved or max iterations reached.
@@ -211,22 +216,22 @@ async def check_convergence(state: OptimizeEvaluateState) -> OptimizeEvaluateSta
     """
     iteration = state.get("iteration", 0)
     max_iterations = state.get("max_iterations", 10)
-    evaluator_output = state.get("evaluator_output", "")
-    optimizer_output = state.get("optimizer_output", "")
+    validator_output = state.get("validator_output", "")  # Changed from evaluator_output
+    writer_output = state.get("writer_output", "")        # Changed from optimizer_output
     optimization_history = state.get("optimization_history", [])
 
-    # Simple heuristic: Check if evaluator says "Goal achieved: YES"
+    # Simple heuristic: Check if validator says "Goal achieved: YES"
     # In production, this would parse structured output
-    goal_achieved = "goal achieved: yes" in evaluator_output.lower()
+    goal_achieved = "goal achieved: yes" in (validator_output or "").lower()
 
     # Update history
     new_history = optimization_history + [
-        f"Changed: {optimizer_output[:100]}... | Result: {evaluator_output[:100]}..."
+        f"Changed: {writer_output[:100]}... | Result: {validator_output[:100]}..."
     ]
 
-    # Safety: If no optimizer/evaluator output, we're in test mode without Claude Code nodes
+    # Safety: If no writer/validator output, we're in test mode without Claude Code nodes
     # Converge immediately to prevent infinite loop
-    if not optimizer_output and not evaluator_output and iteration > 0:
+    if not writer_output and not validator_output and iteration > 0:
         converged = True
         convergence_msg = "⚠️ No agent output detected. Workflow running without Claude Code nodes. Stopping."
     else:
@@ -251,6 +256,7 @@ async def check_convergence(state: OptimizeEvaluateState) -> OptimizeEvaluateSta
     }
 
 
+@observe(name="should_continue")
 def should_continue(state: OptimizeEvaluateState) -> str:
     """
     Conditional edge: Continue optimizing or end?
@@ -328,15 +334,15 @@ claude_code_config = {
     "enabled": True,
     "agents": [
         {
-            "role_name": "optimizer",
-            "repository": "optimization-workspace",  # Isolated workspace for code changes
+            "role_name": "writer",
+            "repository": "test-workspace",          # Writer optimizes code
             "timeout": 120000,                       # 2 minutes per optimization attempt
             "inject_after": "prepare_optimizer",     # Injected after prepare_optimizer node
             "inject_before": "prepare_evaluator"     # Connects to prepare_evaluator
         },
         {
-            "role_name": "evaluator",
-            "repository": "evaluation-workspace",    # Isolated workspace for testing
+            "role_name": "validator",
+            "repository": "test-workspace",          # Validator runs tests in SAME workspace
             "timeout": 120000,                       # 2 minutes per evaluation
             "inject_after": "prepare_evaluator",     # Injected after prepare_evaluator node
             "inject_before": "check_convergence"     # Connects to check_convergence

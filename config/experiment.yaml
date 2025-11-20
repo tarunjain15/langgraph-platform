@@ -14,7 +14,7 @@ checkpointer:
 # Observability (R3)
 observability:
   console: true                   # Print logs to console
-  langfuse: false                 # Disable Langfuse tracing in experiment mode
+  langfuse: true                  # Enable Langfuse tracing in experiment mode
   # To enable Langfuse:
   # 1. Set langfuse: true
   # 2. Add LANGFUSE_SECRET_KEY and LANGFUSE_PUBLIC_KEY to .env

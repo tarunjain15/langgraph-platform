@@ -7,7 +7,7 @@ from runtime.executor import WorkflowExecutor
 
 async def main():
     # Load input data
-    with open('/tmp/optimize_input.json', 'r') as f:
+    with open('test_input_real.json', 'r') as f:
         input_data = json.load(f)
     
     print(f"[test] Input: {input_data}")

@@ -378,5 +378,15 @@ class WorkflowExecutor:
         workflow_name: str,
         config: Dict[str, Any]
     ):
-        """Execute workflow with Langfuse trace decoration"""
+        """
+        Execute workflow with Langfuse trace decoration.
+
+        Current limitation: Creates a single trace for the entire workflow execution.
+        Individual node executions are not yet broken out into separate spans.
+
+        To get node-level observability, decorate your workflow nodes with @observe:
+            @observe(name="my_node")
+            async def my_node(state):
+                ...
+        """
         return await workflow.ainvoke(input_data, config=config)
