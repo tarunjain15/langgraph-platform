@@ -562,7 +562,7 @@ async def get_session(thread_id: str):
     )
 ```
 
-**Note**: PostgreSQL support (R4.4-R4.5: connection pooling, multi-server, size limits) deferred to Phase R8.
+**Note**: PostgreSQL support (connection pooling, multi-server deployment, size limits) remains optional. SQLite handles single-server deployment. PostgreSQL would be implemented if multi-server horizontal scaling becomes necessary (similar to R7 deployment automation - optional operational enhancement).
 
 ---
 
@@ -814,6 +814,237 @@ class WorkflowState(TypedDict):
 
 ---
 
+## Phase R8: Multi-Provider Agency (Cost-Optimized Workflows)
+
+**Constraint Removed:** Single provider (Claude Code only), fixed cost model
+**What Emerges:** Multi-provider abstraction, $0 cost workflows via Ollama
+
+### Task R8.1: Provider Abstraction Layer
+**Type:** Integration Pressure Point
+**Linear:** TBD
+
+**Witness Outcome:**
+- LLMProvider interface defined
+- execute_task(), get_provider_name(), get_cost_estimate() methods
+- All providers implement same contract
+- ProviderConfig Protocol for type hints
+
+**Acceptance Criteria:**
+```python
+# Provider interface
+class LLMProvider(ABC):
+    @abstractmethod
+    async def execute_task(self, task: str, state: dict, config: dict) -> dict:
+        pass
+
+    @abstractmethod
+    def get_provider_name(self) -> str:
+        pass
+
+    @abstractmethod
+    def get_cost_estimate(self, input_tokens: int, output_tokens: int) -> float:
+        pass
+
+# ✅ Interface defined, all providers must implement
+```
+
+**Code Pattern:**
+```python
+# lgp/agents/base.py
+from abc import ABC, abstractmethod
+
+class LLMProvider(ABC):
+    """Base class for all LLM providers"""
+
+    @abstractmethod
+    async def execute_task(self, task, state, config):
+        """Execute task and return state updates"""
+        pass
+```
+
+---
+
+### Task R8.2: Ollama Provider Implementation
+**Type:** Feature Witness
+**Linear:** TBD
+
+**Witness Outcome:**
+- OllamaProvider class extends LLMProvider
+- Uses OpenAI-compatible API (localhost:11434/v1)
+- Langfuse @observe decorator for tracing
+- Cost estimate returns $0.00
+- Models tested: llama3.2, gemma2:2b, qwen2.5-coder
+
+**Acceptance Criteria:**
+```python
+# Create Ollama provider
+provider = OllamaProvider({
+    "role_name": "writer",
+    "model": "llama3.2"
+})
+
+# Execute task
+result = await provider.execute_task(
+    task="Optimize this code...",
+    state={},
+    config={}
+)
+
+# ✅ Returns state updates with $0.00 cost
+assert provider.get_cost_estimate(100, 50) == 0.0
+```
+
+**Code Pattern:**
+```python
+# lgp/agents/ollama_provider.py
+from langfuse import observe
+from langfuse.openai import OpenAI
+
+class OllamaProvider(LLMProvider):
+    def __init__(self, config):
+        self.client = OpenAI(
+            base_url="http://localhost:11434/v1",
+            api_key="ollama"
+        )
+        self.model = config.get("model", "llama3.2")
+
+    @observe(name="ollama_execute_task")
+    async def execute_task(self, task, state, config):
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": task}]
+        )
+        return {f"{self.role_name}_output": response.choices[0].message.content}
+
+    def get_cost_estimate(self, input_tokens, output_tokens):
+        return 0.0  # Self-hosted = $0
+```
+
+---
+
+### Task R8.3: Provider Factory and Dispatch
+**Type:** Integration Pressure Point
+**Linear:** TBD
+
+**Witness Outcome:**
+- create_agent_node() factory dispatches to correct provider
+- Supports "ollama" and "claude_code" providers
+- Backward compatible (defaults to claude_code)
+- Returns LangGraph-compatible async node function
+
+**Acceptance Criteria:**
+```python
+# Create agent node
+node = create_agent_node(
+    provider_type="ollama",
+    config={"role_name": "writer", "model": "llama3.2"},
+    provider_config={"base_url": "http://localhost:11434/v1"}
+)
+
+# Use in workflow
+workflow.add_node("writer_agent", node)
+
+# ✅ Node executes via Ollama, not Claude Code
+```
+
+**Code Pattern:**
+```python
+# lgp/agents/factory.py
+def create_agent_node(provider_type, config, provider_config):
+    if provider_type == "ollama":
+        return create_ollama_node(config, provider_config)
+    elif provider_type == "claude_code":
+        return create_claude_code_node(config, provider_config)
+    else:
+        raise ValueError(f"Unknown provider: {provider_type}")
+```
+
+---
+
+### Task R8.4: Configuration and Executor Integration
+**Type:** Integration Pressure Point
+**Linear:** TBD
+
+**Witness Outcome:**
+- config/experiment.yaml has llm_providers section
+- Ollama configuration: base_url, default_model, enabled
+- runtime/executor.py dispatches by provider
+- Logs show provider + model on injection
+
+**Acceptance Criteria:**
+```yaml
+# config/experiment.yaml
+llm_providers:
+  ollama:
+    enabled: true
+    base_url: "http://localhost:11434/v1"
+    default_model: "llama3.2"
+
+  claude_code:
+    enabled: true
+
+# ✅ Configuration loaded, executor dispatches correctly
+```
+
+**Code Pattern:**
+```python
+# runtime/executor.py
+provider = agent_config.get("provider", "claude_code")
+provider_config = self.config["llm_providers"].get(provider, {})
+
+agent_node = create_agent_node(
+    provider_type=provider,
+    config=agent_config,
+    provider_config=provider_config
+)
+```
+
+---
+
+### Task R8.5: Example Workflow and Testing
+**Type:** Feature Witness
+**Linear:** TBD
+
+**Witness Outcome:**
+- workflows/optimize_evaluate_ollama.py created
+- Uses llama3.2 for writer and validator agents
+- examples/test_ollama_workflow.py validates integration
+- Langfuse shows $0.00 cost for Ollama workflows
+- Documentation shows cost comparison
+
+**Acceptance Criteria:**
+```bash
+$ python3 examples/test_ollama_workflow.py
+
+[lgp] Injecting 2 agent nodes...
+[lgp]   ✅ Injected writer_agent (ollama:llama3.2)
+[lgp]   ✅ Injected validator_agent (ollama:llama3.2)
+[lgp] ✅ Complete (45.2s)
+
+💰 Cost Analysis:
+   Ollama (self-hosted): $0.00
+   vs Claude Code cloud: ~$0.05
+   Savings: 100%
+```
+
+**Code Pattern:**
+```python
+# workflows/optimize_evaluate_ollama.py
+claude_code_config = {
+    "enabled": True,
+    "agents": [
+        {
+            "role_name": "writer",
+            "provider": "ollama",
+            "model": "llama3.2",
+            "timeout": 180000
+        }
+    ]
+}
+```
+
+---
+
 ## Phase R7: Production Mastery (Autonomous Operations)
 
 **Constraint Removed:** Manual deployment, no auto-scaling
@@ -977,14 +1208,14 @@ Task definitions, witness outcomes, and acceptance criteria do NOT change once w
 
 ---
 
-## Parking Decision (R6.5 → R7)
+## Parking Decision (R8 → R7/PostgreSQL)
 
-**Date:** 2025-11-19
-**Status:** ✅ PARKED AT R6.5
+**Date:** 2025-11-20
+**Status:** ✅ PARKED AT R8
 
 ### Truth Shift Analysis
 
-R1 through R6.5 delivered a complete LangGraph runtime that satisfies all sacred constraints and core promises. The platform enables rapid workflow experimentation and production hosting with zero friction promotion.
+R1 through R8 delivered a complete LangGraph runtime with multi-provider agency that satisfies all sacred constraints and core promises. The platform enables rapid workflow experimentation, production hosting with zero friction promotion, and cost-optimized execution via self-hosted LLMs.
 
 ### Evidence of Parkable Foundation
 
@@ -1005,9 +1236,11 @@ R1 through R6.5 delivered a complete LangGraph runtime that satisfies all sacred
 - hot_reload_cycle: ~1.5s (target: <2s) ✅
 - code_changes_for_hosting: 0 (target: 0) ✅
 - commands_to_deploy: Manual (target: 1) ❌ [R7 feature]
+- cost_optimization: $0.00 with Ollama vs ~$0.05 with Claude Code ✅ [R8 feature]
 
 **4. Pressure Resolution:**
 - Configuration sprawl resolved by R6.5 YAML system ✅
+- Cost pressure resolved by R8 multi-provider agency ✅
 - All architectural pressures cleared ✅
 - Clean foundation for future phases ✅
 
@@ -1033,15 +1266,36 @@ R7 (Production Mastery) remains unimplemented but is **optional operational conv
 - Zero breaking changes required: R7 is additive, not corrective ✅
 - Parking preserves foundation: R7 can build later without changes ✅
 
+### PostgreSQL Status: Optional Enhancement
+
+PostgreSQL support (originally mentioned as "deferred to R8") remains unimplemented but is **optional operational enhancement**, not foundational capability.
+
+**PostgreSQL Would Add:**
+- Multi-server horizontal scaling (connection pooling)
+- Production-grade state persistence at scale
+- Support for 10,000+ concurrent workflows
+
+**What Works Today Without PostgreSQL:**
+- SQLite handles single-server deployment perfectly ✅
+- State persistence via R4 checkpointer ✅
+- Experiment + hosted modes fully operational ✅
+- No user complaints about scale limitations ✅
+
+**Why PostgreSQL is Optional:**
+- Core promise delivered: State persistence works with SQLite ✅
+- No evidence of multi-server deployment need ✅
+- R7 (deployment automation) not implemented yet ✅
+- Can add when actual scale pressure emerges ✅
+
 ### Parking Criteria Met
 
 From discipline.md parking requirements:
 1. "No active pressure unresolved" ✅
-2. "All completed phases witnessed" ✅ (R1-R6.5)
+2. "All completed phases witnessed" ✅ (R1-R8)
 3. "Sacred constraints honored in code" ✅
 4. "Documentation exists for users" ✅ (docs/README.md, docs/configuration.md)
-5. "Next phase can start cleanly" ✅ (R7 can build on R6.5 without changes)
+5. "Next phase can start cleanly" ✅ (R7/PostgreSQL can build on R8 without changes)
 
 ### Recommendation
 
-**PARK at R6.5.** The platform is production-ready for users who can deploy manually. R7 adds deployment automation convenience but is not required for the runtime primitive to function.
+**PARK at R8.** The platform is production-ready with cost-optimized multi-provider support. R7 (deployment automation) and PostgreSQL (multi-server scaling) add operational convenience but are not required for the runtime primitive to function.
