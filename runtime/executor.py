@@ -21,6 +21,7 @@ from lgp.checkpointing import create_checkpointer
 from lgp.config import load_config
 from lgp.claude_code.node_factory import create_claude_code_node
 from lgp.claude_code.session_manager import get_default_manager
+from lgp.agents.factory import create_agent_node
 
 
 class WorkflowExecutor:
@@ -148,30 +149,35 @@ class WorkflowExecutor:
 
     async def _inject_claude_code_nodes(self, workflow, module):
         """
-        Inject Claude Code nodes into workflow if claude_code_config is present.
+        Inject LLM agent nodes into workflow (multi-provider support).
 
         Reads claude_code_config from the workflow module and dynamically creates
-        Claude Code nodes, injecting them after specified preparation nodes.
+        agent nodes for the specified provider (Ollama, Claude Code, etc.).
+
+        R8 Multi-Provider Support:
+        - Dispatches to correct provider based on agent config
+        - Supports: "ollama" (self-hosted, $0), "claude_code" (cloud, $$)
+        - Future: GPT, Claude API, LM Studio, etc.
 
         Args:
             workflow: StateGraph builder (uncompiled)
             module: Workflow module (may contain claude_code_config)
 
         Returns:
-            Workflow with Claude Code nodes injected (still uncompiled)
+            Workflow with agent nodes injected (still uncompiled)
         """
         # Check if module has claude_code_config
         if not hasattr(module, 'claude_code_config'):
             if self.verbose:
-                print("[lgp] No claude_code_config found, skipping Claude Code injection")
+                print("[lgp] No claude_code_config found, skipping agent injection")
             return workflow
 
         config = module.claude_code_config
 
-        # Check if Claude Code is enabled
+        # Check if enabled
         if not config.get("enabled", False):
             if self.verbose:
-                print("[lgp] Claude Code disabled in config")
+                print("[lgp] Agent injection disabled in config")
             return workflow
 
         agents = config.get("agents", [])
@@ -181,47 +187,56 @@ class WorkflowExecutor:
             return workflow
 
         if self.verbose:
-            print(f"[lgp] Injecting {len(agents)} Claude Code nodes...")
+            print(f"[lgp] Injecting {len(agents)} agent nodes...")
 
-        # Get MCP session manager (not the session itself - that's created per invocation)
-        mcp_manager = get_default_manager()
+        # Get LLM provider configurations from environment config
+        llm_providers = self.config.get("llm_providers", {})
 
         # Inject each agent
-        # Agents are configured with inject_after and inject_before
-        # We need to create: inject_after → agent → inject_before flow
         for agent_config in agents:
             role_name = agent_config.get("role_name")
-            repository = agent_config.get("repository")
             inject_after = agent_config.get("inject_after")
-            inject_before = agent_config.get("inject_before")  # Next node in flow
-            timeout = agent_config.get("timeout", 120000)
+            inject_before = agent_config.get("inject_before")
+            provider = agent_config.get("provider", "claude_code")  # Default to Claude Code for backward compat
 
-            if not all([role_name, repository, inject_after]):
+            if not all([role_name, inject_after]):
                 print(f"[lgp] Warning: Incomplete agent config, skipping: {agent_config}")
                 continue
 
-            # Create Claude Code node
+            # Get provider-specific configuration
+            provider_config = llm_providers.get(provider, {})
+            if not provider_config:
+                print(f"[lgp] Warning: No config for provider '{provider}', using defaults")
+                provider_config = {"enabled": True}
+
+            # Create agent node using factory (dispatches to correct provider)
             node_name = f"{role_name}_agent"
-            claude_code_node = create_claude_code_node(
-                config={
-                    "role_name": role_name,
-                    "repository": repository,
-                    "timeout": timeout
-                },
-                mcp_manager=mcp_manager
-            )
+            try:
+                agent_node = create_agent_node(
+                    provider_type=provider,
+                    config=agent_config,
+                    provider_config=provider_config
+                )
 
-            # Add node to graph
-            workflow.add_node(node_name, claude_code_node)
+                # Add node to graph
+                workflow.add_node(node_name, agent_node)
 
-            # Add edges: inject_after → agent → inject_before
-            workflow.add_edge(inject_after, node_name)
+                # Add edges: inject_after → agent → inject_before
+                workflow.add_edge(inject_after, node_name)
 
-            if inject_before:
-                workflow.add_edge(node_name, inject_before)
+                if inject_before:
+                    workflow.add_edge(node_name, inject_before)
 
-            if self.verbose:
-                print(f"[lgp]   ✅ Injected {node_name} ({inject_after} → {node_name} → {inject_before or 'END'})")
+                if self.verbose:
+                    provider_label = f"{provider}"
+                    if provider == "ollama":
+                        model = agent_config.get("model", provider_config.get("default_model", "llama3.2"))
+                        provider_label = f"ollama:{model}"
+                    print(f"[lgp]   ✅ Injected {node_name} ({provider_label}) ({inject_after} → {node_name} → {inject_before or 'END'})")
+
+            except ValueError as e:
+                print(f"[lgp] ❌ Failed to create {node_name}: {e}")
+                continue
 
         return workflow
 

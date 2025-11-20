@@ -24,7 +24,24 @@ runtime:
   hot_reload: true                # Enable file watching and auto-reload
   verbose: false                  # Show detailed execution logs
 
+# LLM Providers (R8)
+llm_providers:
+  ollama:
+    enabled: true                 # Enable Ollama (self-hosted, $0 cost)
+    base_url: "http://localhost:11434/v1"  # Ollama API endpoint
+    default_model: "llama3.2"     # Default model for Ollama agents
+    # Available models (pull with `ollama pull <model>`):
+    # - llama3.2 (3B)  - Fast, balanced (2.0GB)
+    # - mistral:7b-instruct - High quality (4.1GB)
+    # - gemma2:2b - Fastest (1.6GB)
+    # - qwen2.5-coder - Code-specialized (4.7GB)
+
+  claude_code:
+    enabled: true                 # Enable Claude Code (cloud, $$ cost)
+    # Configuration managed via MCP (claude-mcp server)
+
 # Feature Flags
 features:
   claude_code: true               # Enable Claude Code node support (R5)
   templates: true                 # Enable workflow templates (R6)
+  multi_provider: true            # Enable multi-provider agent support (R8)
