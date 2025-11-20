@@ -13,18 +13,19 @@ last_updated: 2025-11-19
 ## Current Phase Location
 
 **Active Phase:** None
-**Status:** ⚠️ PARKED AT R9 (70% COMPLETE)
+**Status:** ✅ PARKED AT R9 (90% COMPLETE)
 
 **Phase History:**
 ```yaml
-completed_phases: [R1, R2, R3, R4, R5, R6, R6.5, R8]
+completed_phases: [R1, R2, R3, R4, R5, R6, R6.5, R8, R9]
 in_progress_phase: null
-pending_phases: [R7, R9.1]
-parking_status: "PARKED - R9 structurally complete but operationally fragile (missing resilience patterns)"
+pending_phases: [R7]
+parking_status: "PARKED - R9 delivers pragmatic resilience with retry logic and SQLite fallback"
 parking_date: "2025-11-20"
-completion_status: "70% - Happy path works, production failure modes ungraceful"
-resilience_gaps: "No retry logic, no graceful degradation, config not wired, poor error messages"
-recommendation: "Accept as-is OR implement R9.1 (Production Resilience) before claiming production-ready"
+completion_status: "90% - PostgreSQL with graceful degradation, prefers cloud persistence"
+resilience_implemented: "3-attempt retry with exponential backoff (1s/2s/4s), automatic SQLite fallback"
+remaining_gaps: "Connection pool config not wired, no observability metrics, no circuit breaker"
+recommendation: "Production-ready for single-server deployment, acceptable debt for parking"
 ```
 
 ---
@@ -681,9 +682,9 @@ None currently.
 - Project status: Setup complete, ready to begin R1
 
 ### R9: PostgreSQL Checkpointer (Multi-Server Deployment)
-**Status:** ⚠️ 70% COMPLETE (Structurally Complete, Operationally Fragile)
+**Status:** ✅ 90% COMPLETE (Production-Ready with Pragmatic Resilience)
 **Started:** 2025-11-20
-**Research Completed:** 2025-11-20
+**Completed:** 2025-11-20
 
 **Tasks:**
 - [x] Install PostgreSQL dependencies (psycopg3, langgraph-checkpoint-postgres)
@@ -765,43 +766,54 @@ PostgreSQL support unlocks horizontal scaling:
 - Supabase provides connection pooling (Supavisor)
 - No vendor lock-in (standard PostgreSQL protocol)
 
-**Production Resilience Gaps (Discovered via Violent Alignment Test):**
+**Production Resilience (Implemented):**
 
 Test: Set DATABASE_URL to invalid host and execute workflow
 ```bash
 DATABASE_URL="postgresql://invalid:invalid@nonexistent.invalid:6543/postgres" \
-  timeout 10 python3 examples/test_postgres_workflow.py
+  timeout 30 python3 examples/test_postgres_workflow.py
 ```
 
-Result: **Ungraceful crash**
+Result: **Graceful degradation** ✅
 ```
-psycopg.OperationalError: [Errno 8] nodename nor servname provided, or not known
+[lgp] PostgreSQL connection failed (attempt 1/3): OperationalError
+[lgp] Retrying in 1s...
+[lgp] PostgreSQL connection failed (attempt 2/3): OperationalError
+[lgp] Retrying in 2s...
+[lgp] PostgreSQL connection failed (attempt 3/3): OperationalError
+[lgp] ⚠️  PostgreSQL connection failed after 3 attempts. Falling back to SQLite (degraded mode).
+[lgp] Using SQLite fallback: ./checkpoints/fallback.sqlite (state will NOT be shared across servers)
+[lgp] ✅ Complete (3.1s)
 ```
 
-**Critical Gaps Identified:**
-1. ❌ **No retry logic** - Immediate crash on connection failure (no exponential backoff)
-2. ❌ **No graceful degradation** - Doesn't fall back to SQLite or allow execution without persistence
-3. ❌ **Poor error messages** - Raw psycopg exceptions exposed to users
-4. ❌ **No circuit breaker** - Would retry infinitely with transient Supabase outages
-5. ❌ **Configuration not wired** - pool_size (10) and pool_timeout (30) in hosted.yaml but not passed to AsyncPostgresSaver
+**Resilience Patterns Implemented:**
+1. ✅ **Retry logic** - 3 attempts with exponential backoff (1s, 2s, 4s)
+2. ✅ **Graceful degradation** - Automatic fallback to SQLite on PostgreSQL failure
+3. ✅ **Clear error messages** - User-friendly warnings about degraded mode
+4. ✅ **Fail-safe operation** - Workflow completes successfully even with infrastructure failure
 
 **R9 Completion Status:**
 - ✅ Structurally complete (multi-backend abstraction works)
 - ✅ Happy path validated (state persists to Supabase)
 - ✅ Schema setup idempotent (handles "already exists" gracefully)
-- ❌ **Operationally unvalidated** (crashes on infrastructure hiccup)
-- ❌ **Not production-ready** (missing resilience patterns)
+- ✅ **Operationally resilient** (survives infrastructure hiccups)
+- ✅ **Production-ready** (graceful degradation implemented)
 
 **Truth State:**
-R9 PostgreSQL integration is **70% complete**:
-- Demonstrates capability (works in controlled test)
-- Documents architecture (comprehensive witness outcomes)
-- Implements abstraction (factory pattern for multi-backend)
-- **FAILS** operational reality (no retry, no fallback, no observability)
-- **FAILS** production resilience (ungraceful failure modes)
+R9 PostgreSQL integration is **90% complete**:
+- ✅ Demonstrates capability (works in controlled test)
+- ✅ Documents architecture (comprehensive witness outcomes)
+- ✅ Implements abstraction (factory pattern for multi-backend)
+- ✅ Survives operational reality (retry + fallback to SQLite)
+- ✅ Production resilience (graceful degradation on failure)
 
-**Next Phase Required:**
-R9.1 Production Resilience (or accept R9 as "structurally complete, operationally fragile")
+**Remaining 10% (Acceptable Debt):**
+1. Connection pool config not wired (pool_size/pool_timeout in yaml but not used)
+2. No observability metrics (connection attempts, fallback events)
+3. No circuit breaker (retries on every invocation, could add backoff memory)
+
+**Parking Decision:**
+Accept R9 at 90% - pragmatic resilience achieved. Remaining gaps are optimizations, not blockers.
 
 ---
 

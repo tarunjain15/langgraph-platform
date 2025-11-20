@@ -11,11 +11,79 @@ Based on langgraph-checkpoint-mastery M1.1 implementation.
 
 import os
 import sqlite3
+import asyncio
+import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+
+class ResilientPostgresCheckpointer:
+    """
+    Async context manager wrapper that adds retry logic and SQLite fallback
+    to PostgreSQL checkpointer connections.
+    """
+
+    def __init__(self, url: str, max_retries: int = 3, retry_delays: list = None):
+        self.url = url
+        self.max_retries = max_retries
+        self.retry_delays = retry_delays or [1, 2, 4]
+        self._checkpointer = None
+        self._postgres_cm = None
+
+    async def __aenter__(self):
+        """Attempt PostgreSQL connection with retries, fall back to SQLite on failure."""
+        last_error = None
+
+        for attempt in range(self.max_retries):
+            try:
+                logger.info(f"[lgp] Attempting PostgreSQL connection (attempt {attempt + 1}/{self.max_retries})...")
+                self._postgres_cm = AsyncPostgresSaver.from_conn_string(self.url)
+                self._checkpointer = await self._postgres_cm.__aenter__()
+                logger.info(f"[lgp] ✓ PostgreSQL connection established")
+                return self._checkpointer
+
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    f"[lgp] PostgreSQL connection failed (attempt {attempt + 1}/{self.max_retries}): {type(e).__name__}: {str(e)[:100]}"
+                )
+
+                if attempt < self.max_retries - 1:
+                    delay = self.retry_delays[attempt]
+                    logger.info(f"[lgp] Retrying in {delay}s...")
+                    await asyncio.sleep(delay)
+
+        # All retries exhausted - fall back to SQLite
+        logger.error(
+            f"[lgp] ⚠️  PostgreSQL connection failed after {self.max_retries} attempts. "
+            f"Falling back to SQLite (degraded mode)."
+        )
+        logger.error(f"[lgp] Last error: {type(last_error).__name__}: {str(last_error)[:200]}")
+
+        # Create fallback SQLite checkpointer
+        fallback_path = "./checkpoints/fallback.sqlite"
+        Path(fallback_path).parent.mkdir(parents=True, exist_ok=True)
+
+        logger.warning(
+            f"[lgp] Using SQLite fallback: {fallback_path} "
+            f"(state will NOT be shared across servers)"
+        )
+
+        self._postgres_cm = AsyncSqliteSaver.from_conn_string(fallback_path)
+        self._checkpointer = await self._postgres_cm.__aenter__()
+        return self._checkpointer
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Exit the checkpointer context manager."""
+        if self._postgres_cm:
+            return await self._postgres_cm.__aexit__(exc_type, exc_val, exc_tb)
+        return None
 
 
 def create_checkpointer(config: Dict[str, Any]) -> Union[AsyncSqliteSaver, AsyncPostgresSaver]:
@@ -69,10 +137,10 @@ def create_checkpointer(config: Dict[str, Any]) -> Union[AsyncSqliteSaver, Async
                 "PostgreSQL URL not provided. Set 'url' in config or DATABASE_URL environment variable."
             )
 
-        # Create AsyncPostgresSaver with connection URL
-        # Note: AsyncPostgresSaver is a context manager, so we need to return it
-        # and let the caller handle async context management
-        return AsyncPostgresSaver.from_conn_string(url)
+        # Return resilient checkpointer with retry logic and SQLite fallback
+        # This context manager will attempt PostgreSQL connection with exponential backoff,
+        # and gracefully degrade to SQLite if all retries fail
+        return ResilientPostgresCheckpointer(url, max_retries=3, retry_delays=[1, 2, 4])
 
     else:
         raise ValueError(f"Unknown checkpointer type: {checkpointer_type}. Use 'sqlite' or 'postgresql'.")
