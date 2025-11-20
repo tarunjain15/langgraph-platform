@@ -1,39 +1,81 @@
 """
-SQLite Checkpointer Factory for LangGraph Platform
+Multi-Backend Checkpointer Factory for LangGraph Platform
 
-Creates and manages SqliteSaver instances with proper setup and verification.
+Creates and manages checkpointer instances with proper setup and verification.
+Supports:
+- SQLite (local development, experiment environment)
+- PostgreSQL (hosted environment, multi-server deployment via Supabase)
+
 Based on langgraph-checkpoint-mastery M1.1 implementation.
 """
 
 import os
 import sqlite3
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 
-def create_checkpointer(config: Dict[str, Any]) -> AsyncSqliteSaver:
+def create_checkpointer(config: Dict[str, Any]) -> Union[AsyncSqliteSaver, AsyncPostgresSaver]:
     """
-    Create async SQLite checkpointer for async workflow execution.
+    Create async checkpointer for async workflow execution.
+
+    Supports multiple backends:
+    - SQLite: For local development (experiment environment)
+    - PostgreSQL: For hosted deployment (production environment)
 
     Args:
-        config: Configuration dictionary with 'path' key
+        config: Configuration dictionary with:
+            - type: "sqlite" or "postgresql" (default: "sqlite")
+            - path: SQLite database path (for type="sqlite")
+            - url: PostgreSQL connection URL (for type="postgresql")
+            - async: Use async checkpointer (default: True)
 
     Returns:
-        AsyncSqliteSaver instance
+        AsyncSqliteSaver or AsyncPostgresSaver instance
 
-    Example:
-        >>> checkpointer = create_checkpointer({"path": "./checkpoints.sqlite"})
-        >>> # Use checkpointer in workflow.compile()
+    Examples:
+        >>> # SQLite (experiment environment)
+        >>> checkpointer = create_checkpointer({"type": "sqlite", "path": "./checkpoints.sqlite"})
+
+        >>> # PostgreSQL (hosted environment with Supabase)
+        >>> checkpointer = create_checkpointer({
+        ...     "type": "postgresql",
+        ...     "url": "postgresql://user:pass@host:6543/db"
+        ... })
     """
-    path = config.get("path", "./checkpoints.sqlite")
+    checkpointer_type = config.get("type", "sqlite")
 
-    # Ensure parent directory exists
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    if checkpointer_type == "sqlite":
+        path = config.get("path", "./checkpoints.sqlite")
 
-    # Create AsyncSqliteSaver with database path
-    return AsyncSqliteSaver.from_conn_string(path)
+        # Ensure parent directory exists
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+
+        # Create AsyncSqliteSaver with database path
+        return AsyncSqliteSaver.from_conn_string(path)
+
+    elif checkpointer_type == "postgresql":
+        url = config.get("url")
+
+        if not url:
+            # Try to get from environment variable
+            url = os.environ.get("DATABASE_URL")
+
+        if not url:
+            raise ValueError(
+                "PostgreSQL URL not provided. Set 'url' in config or DATABASE_URL environment variable."
+            )
+
+        # Create AsyncPostgresSaver with connection URL
+        # Note: AsyncPostgresSaver is a context manager, so we need to return it
+        # and let the caller handle async context management
+        return AsyncPostgresSaver.from_conn_string(url)
+
+    else:
+        raise ValueError(f"Unknown checkpointer type: {checkpointer_type}. Use 'sqlite' or 'postgresql'.")
 
 
 def setup_checkpointer(path: str = "./checkpoints.sqlite", verbose: bool = False) -> bool:

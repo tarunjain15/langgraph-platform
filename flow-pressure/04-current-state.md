@@ -13,14 +13,14 @@ last_updated: 2025-11-19
 ## Current Phase Location
 
 **Active Phase:** None
-**Status:** ✅ PARKED AT R8
+**Status:** ✅ PARKED AT R9
 
 **Phase History:**
 ```yaml
-completed_phases: [R1, R2, R3, R4, R5, R6, R6.5, R8]
+completed_phases: [R1, R2, R3, R4, R5, R6, R6.5, R8, R9]
 in_progress_phase: null
 pending_phases: [R7]
-parking_status: "PARKED - R8 delivers complete runtime primitive with multi-provider support"
+parking_status: "PARKED - R9 delivers PostgreSQL support for multi-server deployment"
 parking_date: "2025-11-20"
 ```
 
@@ -676,6 +676,91 @@ None currently.
 - Created 03-implementation-plan.md (STRUCTURAL)
 - Created 04-current-state.md (VOLATILE - this file)
 - Project status: Setup complete, ready to begin R1
+
+### R9: PostgreSQL Checkpointer (Multi-Server Deployment)
+**Status:** ✅ COMPLETE
+**Started:** 2025-11-20
+**Completed:** 2025-11-20
+
+**Tasks:**
+- [x] Install PostgreSQL dependencies (psycopg3, langgraph-checkpoint-postgres)
+- [x] Extend checkpointer factory for multi-backend support
+- [x] Configure Supabase PostgreSQL integration
+- [x] Create setup script (scripts/setup_postgres_checkpointer.py)
+- [x] Test PostgreSQL checkpointer with workflow
+- [x] Update documentation
+
+**Witness Outcomes (Actual):**
+- `postgres_checkpointer_working`: ✅ true
+  - AsyncPostgresSaver connects to Supabase PostgreSQL
+  - Connection: aws-1-ap-northeast-2.pooler.supabase.com:6543 (pooled)
+  - Tables created: checkpoints, checkpoint_writes
+  - Witness: `python3 scripts/setup_postgres_checkpointer.py` ✅ Complete
+- `multi_backend_support`: ✅ true
+  - Factory supports "sqlite" and "postgresql" types
+  - SQLite: Local development (experiment environment)
+  - PostgreSQL: Multi-server deployment (hosted environment)
+  - Witness: lgp/checkpointing/factory.py create_checkpointer() dispatch
+- `supabase_integration`: ✅ true
+  - DATABASE_URL configured in .env with pooled connection
+  - config/hosted.yaml references ${DATABASE_URL}
+  - Supavisor pooling (port 6543) for web apps
+  - Witness: `python3 examples/test_postgres_workflow.py` ✅ Complete (2.5s)
+- `state_persistence_verified`: ✅ true
+  - Workflow state persisted to Supabase PostgreSQL
+  - Thread ID: postgres-test-001
+  - State recoverable across runs
+  - Witness: checkpoints table contains workflow state
+
+**Cost Comparison:**
+```yaml
+sqlite_checkpointer:
+  storage: local disk (free)
+  multi_server: false
+  use_case: experiment, single-server deployment
+postgres_checkpointer:
+  storage: Supabase PostgreSQL (hosted)
+  multi_server: true
+  connection_pooling: Supaav isor (port 6543)
+  use_case: production, multi-server deployment
+```
+
+**Activity Log:**
+1. Installed PostgreSQL dependencies
+   - `pip install asyncpg psycopg2-binary`
+   - `pip install langgraph-checkpoint-postgres`
+   - `pip install 'psycopg[binary,pool]'`
+2. Updated lgp/checkpointing/factory.py
+   - Added multi-backend support (sqlite | postgresql)
+   - create_checkpointer() dispatches based on type
+   - Falls back to DATABASE_URL environment variable
+3. Copied Supabase credentials to .env
+   - DATABASE_URL (pooled connection, port 6543)
+   - DIRECT_DATABASE_URL (direct connection, port 5432)
+   - SUPABASE_SERVICE_ROLE_KEY, ANON_KEY
+4. Updated config/hosted.yaml
+   - checkpointer.type: postgresql
+   - checkpointer.url: ${DATABASE_URL}
+   - Added Supabase-specific comments
+5. Created scripts/setup_postgres_checkpointer.py
+   - Connects to Supabase PostgreSQL
+   - Creates checkpointer schema (idempotent)
+   - Verifies tables exist
+6. Created workflows/simple_echo.py
+   - Minimal workflow for testing checkpointer
+   - No LLM agents required
+7. Created examples/test_postgres_workflow.py
+   - Tests PostgreSQL checkpointer with simple workflow
+   - Uses hosted environment configuration
+   - Verifies state persistence
+
+**Multi-Server Deployment Readiness:**
+PostgreSQL support unlocks horizontal scaling:
+- Multiple workflow servers share single PostgreSQL instance
+- State persists across server restarts and crashes
+- Session continuity maintained via thread_id
+- Supabase provides connection pooling (Supavisor)
+- No vendor lock-in (standard PostgreSQL protocol)
 
 ---
 

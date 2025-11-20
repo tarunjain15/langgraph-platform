@@ -7,11 +7,12 @@
 
 # State Persistence (R4)
 checkpointer:
-  type: postgresql                # postgresql for production
+  type: postgresql                # postgresql for production (Supabase cloud-hosted)
   # Database URL from environment variable
-  # Set DATABASE_URL in .env: postgresql://user:pass@host:5432/dbname
-  url: ${DATABASE_URL}            # Reference to .env variable
-  pool_size: 10                   # Connection pool size
+  # Supabase provides pooled connection (port 6543) for optimal performance
+  # Set DATABASE_URL in .env: postgresql://postgres.project:pass@region.pooler.supabase.com:6543/postgres
+  url: ${DATABASE_URL}            # Reference to .env variable (pooled connection)
+  pool_size: 10                   # Connection pool size (Supavisor handles pooling)
   pool_timeout: 30                # Connection timeout (seconds)
 
 # Observability (R3)
