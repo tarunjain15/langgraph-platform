@@ -42,7 +42,7 @@ Capabilities emerge from runtime boundaries, not from feature implementation
 - API hosting emerges when runtime serves HTTP (hosted mode)
 - Observability emerges when runtime injects tracers
 - Checkpointing emerges when runtime manages persistence
-
+`
 **Direct Implementation = Violation:**
 ```python
 # WRONG: Feature in workflow code
@@ -145,25 +145,25 @@ workflow_cost_visible: true
 
 ---
 
-### Phase 4: Checkpointer Management (R4 - PostgreSQL)
+### Phase 4: Checkpointer Management (R4 - SQLite)
 
-**Constraint Removed:** SQLite-only (single-server limit)
+**Constraint Removed:** No persistent state management
 
 **What Emerges:**
-- PostgreSQL checkpointer (config-driven)
-- Connection pooling (PgBouncer)
-- Multi-server deployment enabled
-- Zero-downtime migration from SQLite
+- AsyncSqliteSaver checkpointer (config-driven)
+- Session state persistence across invocations
+- Thread isolation via thread_id
+- Session query endpoints (GET /sessions/{thread_id})
 
 **Witness Outcomes:**
 ```yaml
-postgres_checkpointer_working: true
-multi_server_deployment: true
-write_throughput: 500+ writes/sec
-migration_data_loss: 0
+sqlite_checkpointer_working: true
+state_persistence: true
+session_queryable: true
+thread_isolation: true
 ```
 
-**Tasks:** 5 tasks (R4.1-R4.5)
+**Tasks:** 3 tasks (R4.1-R4.3)
 
 ---
 
@@ -195,14 +195,14 @@ cost_model: fixed ($20/month)
 
 **What Emerges:**
 - `lgp create <name> --template <type>` command
-- 5+ workflow templates
-- Progressive complexity (basic → multi-agent)
+- 3 workflow templates (basic, multi_agent, with_claude_code)
+- Progressive complexity with customization guides
 - Template registry
 
 **Witness Outcomes:**
 ```yaml
-templates_available: 5+
-create_to_run: <2 minutes
+templates_available: 3
+create_to_run: <60 seconds
 template_customization: true
 ```
 
@@ -210,11 +210,83 @@ template_customization: true
 
 ---
 
+### Phase 6.5: Configuration Infrastructure (R6.5 - Externalized Settings)
+
+**Constraint Removed:** Hardcoded config, distributed settings
+
+**What Emerges:**
+- Environment-specific YAML configs (experiment.yaml, hosted.yaml)
+- Config loader with environment variable substitution
+- Centralized settings management
+- Backward-compatible config fallback
+
+**Witness Outcomes:**
+```yaml
+config_externalized: true
+config_loading: true
+executor_integration: true
+env_var_substitution: true
+```
+
+**Tasks:** 3 tasks (R6.5.1-R6.5.3)
+
+---
+
+### Phase 8: Multi-Provider Agency (R8 - Cost-Optimized Workflows)
+
+**Constraint Removed:** Single LLM provider (Claude Code only)
+
+**What Emerges:**
+- Provider abstraction layer (LLMProvider interface)
+- Ollama provider implementation (self-hosted, $0 cost)
+- Multi-provider dispatch in executor
+- Cost optimization (100% reduction for development)
+
+**Witness Outcomes:**
+```yaml
+provider_abstraction_working: true
+ollama_provider_working: true
+factory_dispatch: true
+cost_optimization: true
+offline_capability: true
+```
+
+**Tasks:** 7 tasks (provider abstraction, Ollama implementation, factory, config, executor, workflow, tests)
+
+---
+
+### Phase 9: PostgreSQL Checkpointer (R9 - Multi-Server Deployment)
+
+**Constraint Removed:** SQLite single-server limitation
+
+**What Emerges:**
+- PostgreSQL checkpointer (Supabase integration)
+- Multi-backend abstraction (SQLite | PostgreSQL)
+- Retry logic with exponential backoff (3 attempts)
+- Graceful degradation (automatic SQLite fallback)
+
+**Witness Outcomes:**
+```yaml
+postgres_checkpointer_working: true
+multi_backend_support: true
+supabase_integration: true
+graceful_degradation: true
+production_resilience: true (90% complete)
+```
+
+**Tasks:** 6 tasks (dependencies, factory extension, Supabase config, setup script, testing, documentation)
+
+**Note:** R9 parked at 90% - remaining 10% (connection pool config, observability metrics, circuit breaker) are optimizations, not blockers. See `research/checkpoint-mastery/` for complete PostgreSQL optimization path (M4-M7).
+
+---
+
 ### Phase 7: Production Mastery (R7 - Autonomous Operations)
+
+**Status:** 🟡 OPTIONAL - Deferred
 
 **Constraint Removed:** Manual deployment, no auto-scaling
 
-**What Emerges:**
+**What Would Emerge:**
 - `lgp deploy <workflow>` command
 - Auto-scaling (request-based)
 - Anomaly detection (error rate spikes)
@@ -229,6 +301,8 @@ manual_intervention: 0
 ```
 
 **Tasks:** 4 tasks (R7.1-R7.4)
+
+**Parking Rationale:** R7 is operational convenience, not foundational capability. R1-R9 delivers complete runtime with multi-provider support and PostgreSQL checkpointing. Users can deploy manually. R7 adds automation but is not required for platform functionality.
 
 ---
 
@@ -300,21 +374,27 @@ vs_api_cost: 90%+ savings (at scale)
 R1 (CLI Runtime) → Foundation
 ├─ R2 (API Runtime) → Requires R1
 ├─ R3 (Observability) → Requires R1 or R2
+├─ R4 (SQLite Checkpointer) → Requires R1 or R2
+├─ R5 (Claude Code Nodes) → Requires R1, R4 (for session persistence)
 └─ R6 (Templates) → Requires R1
 
 R2 (API Runtime) →
-├─ R4 (PostgreSQL) → Requires R2 (multi-server needs API)
-└─ R7 (Production) → Requires R2 (deployment needs API)
+├─ R9 (PostgreSQL) → Requires R2, R4 (multi-server needs API + SQLite foundation)
+└─ R7 (Production) → Requires R2, R9 (deployment needs API + distributed state)
 
-R3 (Observability) → Independent of R4
-R5 (Claude Code) → Can run after R1 (independent)
-R6 (Templates) → Can run after R1 (independent)
+R6.5 (Configuration Infrastructure) → Can run after R1-R6 (config consolidation)
 
-R7 (Production) → Requires R2 + R4 (API + PostgreSQL)
+R8 (Multi-Provider Agency) → Can run after R1, R5 (extends agent capabilities)
+
+R9 (PostgreSQL Checkpointer) → Requires R4 (builds on SQLite patterns)
+
+R7 (Production) → Optional (Requires R2 + R9 for full auto-deployment)
 ```
 
-**Critical Path:** R1 → R2 → R4 → R7
-**Independent:** R3, R5, R6 (can be done in parallel after R1)
+**Critical Path:** R1 → R2 → R4 → R9 (R7 optional)
+**Independent:** R3, R5, R6, R6.5, R8 (can be done in parallel after foundation)
+
+**Actual Implementation Order:** R1 → R2 → R3 → R4 → R5 → R6 → R6.5 → R8 → R9 (R7 deferred)
 
 ---
 
@@ -360,9 +440,49 @@ def my_workflow(state):
     return {"result": process(state)}
 
 # Runtime handles:
-# - lgp run → SQLite checkpointer
-# - lgp serve → PostgreSQL checkpointer
+# - lgp run (experiment) → SQLite checkpointer (R4)
+# - lgp serve (hosted) → PostgreSQL checkpointer (R9, with SQLite fallback)
 ```
+
+---
+
+## Research Verticals
+
+This platform builds upon **foundational research** that explores complete optimization paths:
+
+### Checkpoint Mastery (`research/checkpoint-mastery/`)
+
+**Sacred Primitive:** Checkpoints = BSP state snapshots indexed by thread_id
+
+**Relationship to Platform:**
+- Platform **applies pragmatic subsets** of checkpoint research
+- Research **explores complete optimization paths** (SQLite → PostgreSQL → Redis → auto-scaling)
+
+**Phase Mapping:**
+| Research | Platform | Adoption Status |
+|----------|----------|----------------|
+| M1: Foundation | R4: SQLite Checkpointer | ✅ Implemented |
+| M2: Production Ready | R4: Async + blob patterns | ✅ Implemented |
+| M4: PostgreSQL Migration | R9: PostgreSQL Checkpointer | ✅ 90% Complete |
+| M5: Advanced Optimization | Connection pooling, indexes | Not implemented |
+| M6: Cross-Thread Memory | Store interface | Not implemented |
+| M7: Production Mastery | Hybrid Redis+PostgreSQL | Not implemented |
+
+**Why R9 at 90% is Acceptable:**
+- Platform needs: Multi-server deployment with graceful degradation
+- Platform has: PostgreSQL + retry logic + SQLite fallback
+- Research holds: 100% completion path (M4-M7) for when platform needs it
+
+**Primitive Hierarchy:**
+```
+Platform Runtime (System Layer)
+└── Workflow execution with environment isolation
+    └── Infrastructure substrate (consumed by runtime)
+        └── Checkpoint Research (Infrastructure Layer)
+            └── BSP state snapshot optimization
+```
+
+**Truth:** Checkpoints are **sacred substrate**, not peer primitive. The platform consumes checkpoint patterns pragmatically based on actual need.
 
 ---
 
