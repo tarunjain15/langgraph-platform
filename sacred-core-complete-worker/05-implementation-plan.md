@@ -11,10 +11,12 @@ status: Roadmap (0% complete)
 
 ## Execution Status
 
-**🔮 R13 Roadmap** - Worker Marketplace (20% complete, 4 phases)
+**🔮 R13 Roadmap** - Worker Marketplace (50% complete, 4 phases)
 **✅ R13.0 Complete** - Parallel agent execution blocker resolved
+**✅ R13.1 Complete** - Worker Definition Schema
+**✅ R13.2 Complete** - Worker Factory
 **✅ R11 Complete** - Worker execution layer (foundation)
-**📍 Next** - R13.1 (Worker Definition Schema)
+**📍 Next** - R13.3 (Journey Isolation)
 
 ---
 
@@ -424,12 +426,23 @@ print(f'✅ {definition.worker_id} loaded and validated')
 
 **Task ID:** R13.2
 **Type:** Integration
-**Status:** Roadmap
+**Status:** Complete ✅
 **Dependencies:** R13.1 complete
 **Estimated Duration:** 3 hours
+**Actual Duration:** ~2 hours
 
 ### Witness
-**Observable Truth:** WorkerFactory.spawn() creates worker instance from definition, instance has isolated workspace, constraints loaded
+**Observable Truth:** WorkerFactory.spawn() creates worker instance from definition, instance has isolated workspace, constraints loaded ✅
+
+**Validation Result:**
+```
+14 tests passed in 0.05s
+✅ R13.2 WITNESS SATISFIED
+✅ WorkerFactory.spawn() creates worker instance from definition
+✅ Worker instance has isolated workspace per journey
+✅ Worker carries constraints loaded from definition
+✅ JOURNEY_ISOLATION constraint enforced
+```
 
 ### What This Unlocks
 - Worker instantiation from definitions
@@ -437,10 +450,10 @@ print(f'✅ {definition.worker_id} loaded and validated')
 - Worker lifecycle management (spawn, kill, resume)
 
 ### Acceptance Criteria
-- [ ] `workers/factory.py` implements WorkerFactory
-- [ ] `workers/factory.py` implements spawn(), kill(), resume()
-- [ ] Worker instance carries definition + user_journey_id
-- [ ] Test: `workflows/test_worker_factory.py` (spawn/kill/resume)
+- [x] `workers/factory.py` implements WorkerFactory
+- [x] `workers/factory.py` implements spawn(), kill(), resume()
+- [x] Worker instance carries definition + user_journey_id
+- [x] Test: `workers/test_worker_factory.py` (spawn/kill/resume tests)
 
 ### Execution Steps
 
