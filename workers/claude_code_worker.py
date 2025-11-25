@@ -57,13 +57,31 @@ class ClaudeCodeWorker:
         self.user_journey_id = user_journey_id
         self.isolation_level = isolation_level
 
-        # Container/process isolation (TODO R13.3: actual container spawning)
+        # Container/process isolation
         self.container_id = None
         self.process_id = None
+        self._container_spawned = False
 
         # State tracking
         self._last_action_timestamp = 0.0
         self._action_count = 0
+
+    async def _ensure_container(self):
+        """
+        Ensure container is spawned (R13.3).
+
+        Spawns container on first call, no-op on subsequent calls.
+        """
+        if self.isolation_level == "container" and not self._container_spawned:
+            from workers.isolation.container import ContainerIsolation
+
+            self.container_id = await ContainerIsolation.spawn_container(
+                user_journey_id=self.user_journey_id,
+                workspace_path=self.workspace_path,
+                container_image=self.definition.runtime.container,
+                read_only=True
+            )
+            self._container_spawned = True
 
     async def state(self) -> WorkerState:
         """
@@ -196,23 +214,49 @@ class ClaudeCodeWorker:
 
         Flow:
             1. Witnesses already ran in void() (R13.3/R13.4)
-            2. Execute action in isolated workspace
-            3. Log to audit trail
-            4. Return actual outcome
+            2. Ensure container spawned (if container isolation)
+            3. Execute action in isolated workspace/container
+            4. Log to audit trail
+            5. Return actual outcome
 
         MUST return side_effect_occurred=True if success=True
         """
         start_time = time.time()
         action_id = action.get("action_id", f"exec_{uuid.uuid4().hex[:8]}")
 
-        # TODO R13.3: Actual Claude Code MCP execution
-        # For R13.2, we simulate successful execution
-        actual_outcome = {
-            "executed": True,
-            "action_type": action.get("type", "unknown"),
-            "workspace": self.workspace_path,
-            "user_journey_id": self.user_journey_id
-        }
+        # R13.3: Ensure container spawned before execution
+        await self._ensure_container()
+
+        # Execute action based on isolation level
+        if self.isolation_level == "container" and self.container_id:
+            # Execute in container (R13.3)
+            from workers.isolation.container import ContainerIsolation
+
+            command = action.get("command", "echo 'No command specified'")
+            result = await ContainerIsolation.exec_in_container(
+                container_id=self.container_id,
+                command=command,
+                workdir="/workspace"
+            )
+
+            actual_outcome = {
+                "executed": True,
+                "action_type": action.get("type", "unknown"),
+                "workspace": self.workspace_path,
+                "user_journey_id": self.user_journey_id,
+                "container_id": self.container_id[:12],
+                "exit_code": result["exit_code"],
+                "output": result["output"]
+            }
+        else:
+            # Process/thread isolation (placeholder)
+            actual_outcome = {
+                "executed": True,
+                "action_type": action.get("type", "unknown"),
+                "workspace": self.workspace_path,
+                "user_journey_id": self.user_journey_id,
+                "isolation": self.isolation_level
+            }
 
         # Update state
         self._action_count += 1
@@ -251,10 +295,16 @@ class ClaudeCodeWorker:
             2. Cleanup workspace directory (optional)
             3. Release any held resources
         """
-        # TODO R13.3: Actual cleanup
-        # - Stop container if container_id exists
-        # - Kill process if process_id exists
-        # - Clean workspace directory (configurable)
+        # R13.3: Kill container if spawned
+        if self.container_id:
+            from workers.isolation.container import ContainerIsolation
+            await ContainerIsolation.kill_container(self.container_id)
+            self.container_id = None
 
-        self.container_id = None
-        self.process_id = None
+        # Kill process if exists (future: process isolation)
+        if self.process_id:
+            # TODO: Kill process
+            self.process_id = None
+
+        # Reset state
+        self._container_spawned = False
