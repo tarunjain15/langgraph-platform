@@ -150,10 +150,19 @@ async def run_test(topic: str):
         # Build workflow
         workflow = StateGraph(TestState)
 
-        # Add nodes with wrappers
-        workflow.add_node("research", lambda s: researcher_wrapper(s, researcher_node))
-        workflow.add_node("write", lambda s: writer_wrapper(s, writer_node))
-        workflow.add_node("review", lambda s: reviewer_wrapper(s, reviewer_node))
+        # Add nodes - directly use async wrapper functions
+        async def research_node_wrapped(state):
+            return await researcher_wrapper(state, researcher_node)
+
+        async def write_node_wrapped(state):
+            return await writer_wrapper(state, writer_node)
+
+        async def review_node_wrapped(state):
+            return await reviewer_wrapper(state, reviewer_node)
+
+        workflow.add_node("research", research_node_wrapped)
+        workflow.add_node("write", write_node_wrapped)
+        workflow.add_node("review", review_node_wrapped)
 
         # Define flow
         workflow.set_entry_point("research")

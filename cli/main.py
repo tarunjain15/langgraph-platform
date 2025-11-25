@@ -22,7 +22,8 @@ def cli():
 @click.argument('workflow', type=click.Path(exists=True))
 @click.option('--watch', is_flag=True, help='Enable hot reload (experiment mode)')
 @click.option('--verbose', is_flag=True, help='Show detailed logs')
-def run(workflow: str, watch: bool, verbose: bool):
+@click.option('--input', '-i', 'input_data', help='Input data as JSON string')
+def run(workflow: str, watch: bool, verbose: bool, input_data: str):
     """Execute workflow in experiment mode
 
     WORKFLOW: Path to workflow Python file (e.g., workflows/my_workflow.py)
@@ -31,7 +32,11 @@ def run(workflow: str, watch: bool, verbose: bool):
         lgp run workflows/basic_workflow.py
         lgp run workflows/my_workflow.py --watch
         lgp run workflows/my_workflow.py --watch --verbose
+        echo '{"topic": "test"}' | lgp run workflows/my_workflow.py
+        lgp run workflows/my_workflow.py --input '{"topic": "test"}'
     """
+    import sys
+    import json
     from runtime.executor import WorkflowExecutor
 
     click.echo(f"[lgp] Loading workflow: {workflow}")
@@ -39,6 +44,25 @@ def run(workflow: str, watch: bool, verbose: bool):
     click.echo(f"[lgp] Hot reload: {'ON' if watch else 'OFF'}")
     click.echo(f"[lgp] Verbose: {'ON' if verbose else 'OFF'}")
     click.echo()
+
+    # Parse input data from stdin, --input flag, or use default
+    parsed_input = None
+    if input_data:
+        # From --input flag
+        try:
+            parsed_input = json.loads(input_data)
+        except json.JSONDecodeError as e:
+            click.echo(f"[lgp] ❌ Invalid JSON in --input: {e}")
+            raise click.Abort()
+    elif not sys.stdin.isatty():
+        # From stdin (piped input)
+        try:
+            stdin_data = sys.stdin.read().strip()
+            if stdin_data:
+                parsed_input = json.loads(stdin_data)
+        except json.JSONDecodeError as e:
+            click.echo(f"[lgp] ❌ Invalid JSON from stdin: {e}")
+            raise click.Abort()
 
     executor = WorkflowExecutor(environment="experiment", verbose=verbose)
 
@@ -48,7 +72,7 @@ def run(workflow: str, watch: bool, verbose: bool):
         watch_and_execute(workflow, executor)
     else:
         # Single execution
-        executor.execute(workflow)
+        executor.execute(workflow, input_data=parsed_input)
 
 
 @cli.command()
