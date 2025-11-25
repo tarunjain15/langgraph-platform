@@ -1,6 +1,15 @@
 # LangGraph Platform - Workflow Templates
 
-Rapid-start templates for creating workflows in minutes.
+**Rapid-start templates encoding mental models for 0-cycle builds.**
+
+> **Mental Model First:** Templates teach channel-first thinking to prevent the 6-cycle debugging pain. Read template headers before coding.
+
+**See Also:**
+- Template architecture: [sacred-core/03-templates.md](../sacred-core/03-templates.md)
+- Mental models: [sacred-core/01-the-project.md](../sacred-core/01-the-project.md#workflow-mode)
+- Constraints: [sacred-core/02-the-discipline.md](../sacred-core/02-the-discipline.md)
+
+---
 
 ## Available Templates
 
@@ -196,8 +205,87 @@ lgp deploy my_workflow
 
 ---
 
+## Mental Model Learning Path
+
+**Start here to avoid 6-cycle debugging:**
+
+### 1. Understand the Primitive (5 minutes)
+Read: [sacred-core/01-the-project.md](../sacred-core/01-the-project.md)
+
+**Key Concepts:**
+- Workflow mode vs Agent mode
+- Platform is workflow layer (R1-R9)
+- Agent layer is future (R10+)
+
+### 2. Learn Channel Coordination (10 minutes)
+Read template headers in order:
+1. `basic/workflow.py` - Single node pattern
+2. `multi_agent/workflow.py` - Field ownership pattern
+3. `with_claude_code/workflow.py` - Runtime injection pattern
+
+**Key Insights:**
+- State = TypedDict (not dict to pass around)
+- Nodes = Producers (return only owned fields)
+- Channels = Coordination (LangGraph handles routing)
+- **Never spread state:** `{**state, "field": value}` → concurrent writes
+
+### 3. Know the Constraints (5 minutes)
+Read: [sacred-core/02-the-discipline.md](../sacred-core/02-the-discipline.md)
+
+**6 Sacred Constraints:**
+1. ENVIRONMENT_ISOLATION - No `os.getenv("ENVIRONMENT")` in workflows
+2. CONFIG_DRIVEN_INFRASTRUCTURE - No checkpointer/tracer in code
+3. CHANNEL_COORDINATION_PURITY - No state spreading
+4. HOT_RELOAD_CONTINUITY - <500ms reload
+5. ZERO_FRICTION_PROMOTION - Same code in experiment and hosted
+6. WITNESS_BASED_COMPLETION - Observable metrics
+
+### 4. Choose Template (2 minutes)
+Decision tree:
+- Single step? → `basic`
+- Multi-agent collaboration? → `multi_agent`
+- Need Claude Code? → `with_claude_code`
+
+### 5. Build Workflow (Variable)
+- Read template header completely
+- Follow CUSTOMIZE markers
+- Trust the runtime for infrastructure
+- Test in experiment mode first
+
+**Total Time to 0-Cycle Build:** ~25 minutes (vs 6-cycle trial-and-error: hours)
+
+---
+
+## Common Errors and Fixes
+
+### Error: InvalidUpdateError - Concurrent write detected
+
+**Cause:** State spreading or multiple nodes writing same field
+
+**Fix:**
+```python
+# ❌ WRONG
+return {**state, "output": value}
+
+# ✅ CORRECT
+return {"output": value}
+```
+
+**Reference:** [sacred-core/02-the-discipline.md#channel-coordination-purity](../sacred-core/02-the-discipline.md#channel-coordination-purity)
+
+### Error: Workflow behaves differently in hosted mode
+
+**Cause:** Environment-aware code in workflow
+
+**Fix:** Remove all `os.getenv()`, checkpointer instantiation, tracer initialization. Let runtime inject infrastructure.
+
+**Reference:** [sacred-core/02-the-discipline.md#environment-isolation](../sacred-core/02-the-discipline.md#environment-isolation)
+
+---
+
 ## Support
 
 - Documentation: `lgp --help`
+- Sacred Knowledge: [sacred-core/](../sacred-core/)
 - Issues: [GitHub Issues](https://github.com/yourusername/langgraph-platform/issues)
 - Examples: See `workflows/` directory for reference implementations

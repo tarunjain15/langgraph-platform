@@ -1,140 +1,211 @@
 """
-Multi-Agent Workflow Template
+Multi-Agent Workflow Template (⭐⭐ Intermediate)
 
-A 3-agent pipeline pattern: Agent 1 → Agent 2 → Agent 3
+MENTAL MODEL:
+  State = TypedDict with field ownership (each agent owns its output fields)
+  Nodes = Producers (agents return only their owned fields)
+  Flow = Sequential (researcher → writer → reviewer)
+  Coordination = Channel-based (LangGraph coordinates via LastValue channels)
+
+ANTI-PATTERNS TO AVOID:
+  ❌ return {**state, "field": value}       # State spreading → concurrent writes
+  ❌ Multiple nodes writing same field      # Collision → InvalidUpdateError
+  ❌ current_step shared by all nodes       # Concurrent writes
+  ❌ Returning fields from other nodes      # Violates field ownership
+
+CORRECT PATTERNS:
+  ✅ Each agent owns its output fields      # researcher owns research_output
+  ✅ return {"research_output": value}      # Return only owned fields
+  ✅ Read from any field, write to owned    # Read topic, write research_output
+  ✅ Sequential flow via edges              # Prevents concurrent execution
+
+FIELD OWNERSHIP PATTERN:
+  researcher_node:
+    reads: topic
+    owns: research_output
+
+  writer_node:
+    reads: research_output
+    owns: writing_output
+
+  reviewer_node:
+    reads: writing_output
+    owns: review_output
 
 CUSTOMIZE THIS TEMPLATE:
-1. Update WorkflowState with your data schema
-2. Rename agents (researcher, writer, reviewer → your agent names)
-3. Modify agent logic for your use case
-4. Add/remove agents as needed
+  1. Rename agents for your domain (Zone 1: State Schema)
+  2. Modify agent logic (Zone 2: Node Functions)
+  3. Adjust execution flow (Zone 3: Graph Structure)
 
 USAGE:
-    lgp run workflows/my_workflow.py
+  lgp run workflows/my_workflow.py         # Experiment mode
+  lgp serve workflows/my_workflow.py       # Hosted mode
+
+SEE ALSO:
+  - Mental models: sacred-core/01-the-project.md#workflow-mode
+  - Field ownership: sacred-core/02-the-discipline.md#channel-coordination-purity
+  - Template guide: sacred-core/03-templates.md#tier-2-multi-agent
 """
 
 from typing import TypedDict
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, START, END
 
+
+# ========================================
+# ZONE 1: State Schema
+# ← CUSTOMIZE: Rename agents, add/remove fields
+# ========================================
 
 class WorkflowState(TypedDict):
     """
-    State that flows through all agents.
+    State schema with field ownership.
 
-    CUSTOMIZE: Add your own fields here
+    Pattern: Each agent owns its output fields
     """
     # Input
-    topic: str
+    topic: str                # ← CUSTOMIZE: Your input fields
 
-    # Agent 1 (Researcher)
-    research_task: str
-    research_output: str
+    # Researcher fields (researcher owns these)
+    research_output: str      # ← CUSTOMIZE: Agent 1 output
 
-    # Agent 2 (Writer)
-    writing_task: str
-    writing_output: str
+    # Writer fields (writer owns these)
+    writing_output: str       # ← CUSTOMIZE: Agent 2 output
 
-    # Agent 3 (Reviewer)
-    review_task: str
-    review_output: str
-
-    # Metadata
-    current_step: str
+    # Reviewer fields (reviewer owns these)
+    review_output: str        # ← CUSTOMIZE: Agent 3 output
 
 
-async def researcher_node(state: WorkflowState) -> WorkflowState:
+# ========================================
+# ZONE 2: Node Functions
+# ← CUSTOMIZE: Replace with your agent logic
+# ========================================
+
+async def researcher_node(state: WorkflowState) -> dict:
     """
     Agent 1: Research
 
-    CUSTOMIZE: Replace with your first agent logic
+    Ownership:
+      - Reads: topic
+      - Owns: research_output
 
-    Args:
-        state: Current workflow state
-
-    Returns:
-        Updated state with research results
+    ✅ Returns only fields this agent owns
+    ✅ No state spreading
     """
-    topic = state.get("topic", "")
+    topic = state["topic"]
 
     # ← CUSTOMIZE: Add your research logic here
-    research_result = f"Research findings on: {topic}\n\n- Key point 1\n- Key point 2\n- Key point 3"
+    research_result = (
+        f"Research findings on: {topic}\n\n"
+        "- Key point 1\n"
+        "- Key point 2\n"
+        "- Key point 3"
+    )
 
-    return {
-        **state,
-        "research_output": research_result,
-        "current_step": "research_complete"
-    }
+    # ✅ CORRECT: Return only owned field
+    return {"research_output": research_result}
+
+    # ❌ WRONG: Don't spread state
+    # return {**state, "research_output": research_result}
 
 
-async def writer_node(state: WorkflowState) -> WorkflowState:
+async def writer_node(state: WorkflowState) -> dict:
     """
     Agent 2: Writing
 
-    CUSTOMIZE: Replace with your second agent logic
+    Ownership:
+      - Reads: research_output
+      - Owns: writing_output
 
-    Args:
-        state: Current workflow state
-
-    Returns:
-        Updated state with written content
+    ✅ Returns only fields this agent owns
+    ✅ Reads from previous agent's output
     """
-    research = state.get("research_output", "")
+    research = state["research_output"]
 
     # ← CUSTOMIZE: Add your writing logic here
-    article = f"Article Draft:\n\nBased on the research:\n{research}\n\nThis article explores the key findings..."
+    article = (
+        f"Article Draft:\n\n"
+        f"Based on the research:\n{research}\n\n"
+        "This article explores the key findings..."
+    )
 
-    return {
-        **state,
-        "writing_output": article,
-        "current_step": "writing_complete"
-    }
+    # ✅ CORRECT: Return only owned field
+    return {"writing_output": article}
 
 
-async def reviewer_node(state: WorkflowState) -> WorkflowState:
+async def reviewer_node(state: WorkflowState) -> dict:
     """
     Agent 3: Review
 
-    CUSTOMIZE: Replace with your third agent logic
+    Ownership:
+      - Reads: writing_output
+      - Owns: review_output
 
-    Args:
-        state: Current workflow state
-
-    Returns:
-        Updated state with review feedback
+    ✅ Returns only fields this agent owns
+    ✅ Final agent in pipeline
     """
-    article = state.get("writing_output", "")
+    article = state["writing_output"]
 
     # ← CUSTOMIZE: Add your review logic here
-    review = f"Review Feedback:\n\nThe article is well-structured. Suggestions:\n- Expand section 2\n- Add more examples"
+    review = (
+        "Review Feedback:\n\n"
+        "The article is well-structured. Suggestions:\n"
+        "- Expand section 2\n"
+        "- Add more examples"
+    )
 
-    return {
-        **state,
-        "review_output": review,
-        "current_step": "review_complete"
-    }
-
-
-def create_workflow():
-    """Create and compile the multi-agent workflow"""
-    # Build graph
-    graph = StateGraph(WorkflowState)
-
-    # Add agent nodes
-    # ← CUSTOMIZE: Rename agents or add more nodes
-    graph.add_node("researcher", researcher_node)
-    graph.add_node("writer", writer_node)
-    graph.add_node("reviewer", reviewer_node)
-
-    # Define sequential flow
-    # ← CUSTOMIZE: Modify agent execution order
-    graph.set_entry_point("researcher")
-    graph.add_edge("researcher", "writer")
-    graph.add_edge("writer", "reviewer")
-    graph.add_edge("reviewer", END)
-
-    # Compile and return
-    return graph.compile()
+    # ✅ CORRECT: Return only owned field
+    return {"review_output": review}
 
 
-# Export compiled workflow (required by lgp runtime)
-workflow = create_workflow()
+# ========================================
+# ZONE 3: Graph Structure
+# ← CUSTOMIZE: Add/remove agents, modify flow
+# ========================================
+
+# Build workflow graph
+workflow = StateGraph(WorkflowState)
+
+# Add agent nodes
+# ← CUSTOMIZE: Rename agents or add more nodes
+workflow.add_node("researcher", researcher_node)
+workflow.add_node("writer", writer_node)
+workflow.add_node("reviewer", reviewer_node)
+
+# Define sequential flow
+# ← CUSTOMIZE: Modify agent execution order
+workflow.add_edge(START, "researcher")
+workflow.add_edge("researcher", "writer")
+workflow.add_edge("writer", "reviewer")
+workflow.add_edge("reviewer", END)
+
+# Export uncompiled workflow (runtime compiles with infrastructure)
+# ✅ CORRECT: Export uncompiled
+app = workflow
+
+# ❌ WRONG: Don't compile in workflow code
+# app = workflow.compile()  # Runtime handles this
+
+
+# ========================================
+# PATTERN EXPLANATION
+# ========================================
+
+# Why field ownership matters:
+#
+# ❌ BAD (causes concurrent writes):
+#   State has: current_step: str
+#   researcher returns: {**state, "current_step": "research"}
+#   writer returns: {**state, "current_step": "writing"}
+#   → LangGraph sees: "Both nodes want to write current_step!"
+#   → Result: InvalidUpdateError
+#
+# ✅ GOOD (no conflicts):
+#   researcher owns: research_output
+#   writer owns: writing_output
+#   reviewer owns: review_output
+#   → Each agent writes to different field
+#   → Result: No conflicts, clean coordination
+#
+# Key insight: Channels coordinate BETWEEN nodes.
+# You don't need to manually pass state through.
+# Trust LangGraph to route values via channels.
