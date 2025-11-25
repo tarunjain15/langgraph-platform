@@ -173,7 +173,7 @@ class ClaudeCodeWorker:
 
         Flow:
             1. Validate action structure
-            2. Run constraint witnesses (TODO R13.3/R13.4)
+            2. Run constraint witnesses (R13.4 - automatic enforcement)
             3. Simulate outcome
             4. Return prediction
 
@@ -181,9 +181,16 @@ class ClaudeCodeWorker:
         """
         action_id = action.get("action_id", f"void_{uuid.uuid4().hex[:8]}")
 
-        # TODO R13.4: Automatic witness verification
-        # For R13.2, we skip witness checks (will be added in R13.3/R13.4)
-        warnings = []
+        # R13.4: Automatic witness verification (WITNESS_AUTOMATION constraint)
+        # Witnesses called automatically before every execute()
+        from workers.enforcement.witness import WitnessEnforcement
+
+        # Use definition constraints (WorkerConstraint objects) not protocol constraints
+        warnings = await WitnessEnforcement.verify(
+            worker_id=self.worker_id,
+            action=action,
+            constraints=self.definition.constraints
+        )
 
         # Simulate (no actual execution)
         predicted_outcome = {
