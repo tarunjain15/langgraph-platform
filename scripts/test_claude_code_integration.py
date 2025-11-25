@@ -11,7 +11,8 @@ Usage:
 
 import sys
 import asyncio
-from typing import TypedDict
+from typing import TypedDict, Annotated
+import operator
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -35,7 +36,7 @@ class TestState(TypedDict):
     writer_session_id: str
     reviewer_output: str
     reviewer_session_id: str
-    current_step: str
+    current_step: Annotated[list[str], operator.add]  # Topic channel (accumulates in parallel)
 
 
 @observe(name="researcher_node_wrapper")
@@ -174,7 +175,7 @@ async def run_test(topic: str):
             'writer_session_id': '',
             'reviewer_output': '',
             'reviewer_session_id': '',
-            'current_step': 'initialized'
+            'current_step': []  # Topic channel starts empty
         }
 
         # Execute with metadata

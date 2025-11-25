@@ -112,7 +112,7 @@ def create_claude_code_node(config: AgentRoleConfig, mcp_manager) -> Callable:
             result_state = {
                 f'{config["role_name"]}_output': output,
                 session_key: returned_session_id,
-                'current_step': config['role_name']
+                'current_step': [config['role_name']]  # Topic channel (accumulates in parallel)
             }
 
             return result_state
