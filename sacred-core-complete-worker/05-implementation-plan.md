@@ -151,12 +151,21 @@ VERIFIED:
 
 **Task ID:** R13.1
 **Type:** Foundation
-**Status:** Roadmap
+**Status:** Complete ✅
 **Dependencies:** R13.0 complete
 **Estimated Duration:** 2 hours
+**Actual Duration:** ~1.5 hours
 
 ### Witness
 **Observable Truth:** Worker definition YAML validates successfully, loads into Python dataclass, rejects invalid definitions
+
+**Validation Result:**
+```
+20 tests passed in 0.05s
+✅ research_assistant_v1.yaml validates successfully
+✅ Defense layers 1-4 all functional
+✅ DEFINITION_DECLARATIVE_PURITY constraint enforced
+```
 
 ### What This Unlocks
 - First-class worker definitions (configuration as data)
@@ -164,11 +173,11 @@ VERIFIED:
 - Validation layer (catch errors at load time)
 
 ### Acceptance Criteria
-- [ ] `workers/definitions/schema.py` defines all dataclasses
-- [ ] `workers/definitions/loader.py` loads YAML → Python objects
-- [ ] `workers/definitions/validator.py` validates definitions
-- [ ] Example definition: `workers/definitions/examples/research_assistant_v1.yaml`
-- [ ] Tests: `workflows/test_worker_definitions.py` (validation coverage)
+- [x] `workers/definitions/schema.py` defines all dataclasses
+- [x] `workers/definitions/loader.py` loads YAML → Python objects
+- [x] `workers/definitions/validator.py` validates definitions
+- [x] Example definition: `workers/definitions/examples/research_assistant_v1.yaml`
+- [x] Tests: `workers/definitions/test_definitions.py` (validation coverage)
 
 ### Execution Steps
 

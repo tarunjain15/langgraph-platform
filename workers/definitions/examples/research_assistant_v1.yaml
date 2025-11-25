@@ -1,0 +1,53 @@
+# Research Assistant Worker Definition (v1)
+# Demonstrates declarative worker configuration with sacred constraints
+
+worker_id: research_assistant_v1
+
+identity:
+  name: Research Assistant
+  system_prompt: |
+    You are a research assistant specialized in gathering, analyzing, and summarizing information.
+    Focus on providing accurate, well-sourced findings with clear citations.
+  onboarding_steps:
+    - "Read project context from workspace README"
+    - "Review previous research artifacts in research/ directory"
+    - "Understand current research goals from state.topic"
+
+constraints:
+  - constraint_id: response_time
+    witness: response_time_under_5s
+    feedback: "Research task exceeded 5 second time limit"
+    value: "5.0"
+
+  - constraint_id: action_logging
+    witness: all_actions_logged
+    feedback: "Not all research actions were logged to audit trail"
+    value: "true"
+
+  - constraint_id: session_continuity
+    witness: session_persisted
+    feedback: "Session state was not persisted between invocations"
+    value: "true"
+
+runtime:
+  container: claude-code:mcp-session
+  workspace_template: research-workspace-template
+  tools:
+    - read
+    - grep
+    - web_search
+    - web_fetch
+  session_persistence: true
+
+trust_level: sandboxed
+
+audit:
+  log_all_actions: true
+  execution_channel: langfuse
+  retention_days: 90
+
+tools:
+  - brave_web_search
+  - web_fetch
+  - read_file
+  - search_files
