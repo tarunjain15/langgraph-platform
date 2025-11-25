@@ -1359,3 +1359,244 @@ else:
 **Production Safety:** Automatic witness verification prevents "forgot to check constraint" errors. Platform enforces, developers cannot bypass.
 
 **Integration Point:** R13 workers integrate with R10 coordination via ExecutorNode. Each user journey gets isolated worker instance.
+
+---
+
+## R14: MCP Integration (Production Ready)
+
+**Status:** Complete ✅
+**Duration:** 2.5 hours
+**Validation:** 13 integration tests passed, live witness verification passed
+
+### Purpose
+Expose Worker Marketplace as MCP tools for LangGraph workflow integration. Enable declarative worker invocation with automatic constraint enforcement at MCP layer.
+
+### Acceptance Criteria
+1. ✅ MCP server exposes 4 tools: spawn_worker, execute_in_worker, get_worker_state, kill_worker
+2. ✅ Production worker definition (filesystem_research_v1) loads successfully
+3. ✅ Idempotent worker spawning (returns existing worker if already created for journey)
+4. ✅ Automatic constraint enforcement at MCP layer (void() called before execute())
+5. ✅ End-to-end MCP workflow validated (spawn → execute → state → kill)
+
+### Implementation
+
+#### R14.1: MCP Server Core
+**File:** `workers/mcp_server.py` (350+ lines)
+
+```python
+class WorkerMarketplaceMCP:
+    """MCP Server exposing Worker Marketplace"""
+
+    def __init__(self):
+        self.server = Server("worker-marketplace")
+        self.workers: Dict[str, Any] = {}
+
+        @self.server.list_tools()
+        async def handle_list_tools() -> list[Tool]:
+            return await self.handle_list_tools()
+
+        @self.server.call_tool()
+        async def handle_call_tool(name: str, arguments: dict) -> list[TextContent]:
+            return await self.handle_call_tool(name, arguments)
+```
+
+**MCP Tools:**
+1. `spawn_worker(worker_id, journey_id, isolation_level)` - Create isolated worker instance
+2. `execute_in_worker(journey_id, action)` - Run action with automatic constraint verification
+3. `get_worker_state(journey_id)` - Query worker status and metrics
+4. `kill_worker(journey_id)` - Terminate worker and cleanup resources
+
+**Key Features:**
+- Idempotent spawning (returns existing worker if already created)
+- Automatic constraint enforcement (calls void() before execute())
+- Journey-scoped isolation (each user journey gets own worker instance)
+- Error handling with clear user feedback
+
+#### R14.2: Production Worker Definition
+**File:** `workers/definitions/production/filesystem_research_v1.yaml`
+
+```yaml
+worker_id: filesystem_research_v1
+
+identity:
+  name: "Filesystem Research Assistant"
+  system_prompt: |
+    You are a Filesystem Research Assistant with specialized capabilities
+    for exploring and analyzing codebases, documentation, and filesystem structures.
+
+runtime:
+  container: "python:3.11-slim"
+  workspace_template: "/tmp/workers/research/{user_journey_id}"
+  tools: ["read", "search", "list"]
+  session_persistence: true
+
+constraints:
+  - constraint_id: "readonly_filesystem"
+    witness: "verify_workspace_isolation"
+    value: "read_only"
+    feedback: "alert_dashboard"
+
+  - constraint_id: "max_file_size"
+    witness: "verify_file_size_within_limit"
+    value: "1MB"
+    feedback: "alert_dashboard"
+
+  - constraint_id: "network_isolation"
+    witness: "verify_no_network_access"
+    value: "blocked"
+    feedback: "alert_dashboard"
+
+trust_level: "sandboxed"
+```
+
+**Workspace Pre-seeding:**
+- `README.md` - Workspace overview and getting started guide
+- `ARCHITECTURE.md` - System architecture and design decisions
+
+**Onboarding Steps:**
+1. Read README.md (understand workspace capabilities)
+2. Read ARCHITECTURE.md (understand system design)
+3. Search for Python files (discover codebase structure)
+
+#### R14.3: Integration Tests
+**File:** `workers/test_mcp_integration.py` (600+ lines)
+
+**Test Coverage (13 tests):**
+- Server initialization and tool registration (3 tests)
+- Worker spawning and idempotency (2 tests)
+- Execution with constraint enforcement (3 tests)
+- Worker state queries (2 tests)
+- Worker cleanup (2 tests)
+- Production definition loading (1 test)
+
+**All 13 tests passed** ✅
+
+#### R14.4: Live Witness Verification
+**File:** `workers/verify_r14_witness.py` (200+ lines)
+
+**Verification Steps:**
+1. ✅ MCP server initializes and registers 4 tools
+2. ✅ Production worker spawned successfully
+3. ✅ Idempotent spawning verified (second spawn returns existing worker)
+4. ✅ Constraint violation detected automatically at MCP layer
+5. ✅ Valid action executed successfully
+6. ✅ Worker state retrieved via MCP tool
+7. ✅ Worker killed and cleaned up
+8. ✅ End-to-end MCP workflow validated
+
+**Witness output:**
+```
+R14 WITNESS SATISFIED ✓
+
+Witness verified:
+  - MCP server initializes and registers 4 tools
+  - Production worker definition loads successfully
+  - Workers spawn with isolated workspaces (idempotent)
+  - Constraint enforcement automatic at MCP layer
+  - void() called before execute() (R13.4 integration)
+  - Constraint violations detected and execution rejected
+  - Valid actions execute successfully
+  - Worker state queryable via MCP tool
+  - Worker cleanup via MCP tool
+  - End-to-end MCP workflow production-ready
+
+R14 PRODUCTION INTEGRATION COMPLETE ✓
+```
+
+### Usage from LangGraph
+
+```python
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+# Connect to Worker Marketplace MCP server
+server_params = StdioServerParameters(
+    command="python3",
+    args=["workers/mcp_server.py"]
+)
+
+async with stdio_client(server_params) as (read, write):
+    async with ClientSession(read, write) as session:
+        await session.initialize()
+
+        # Spawn worker for user journey
+        spawn_result = await session.call_tool(
+            "spawn_worker",
+            arguments={
+                "worker_id": "filesystem_research_v1",
+                "journey_id": thread_id,
+                "isolation_level": "process"
+            }
+        )
+
+        # Execute action with automatic constraint enforcement
+        exec_result = await session.call_tool(
+            "execute_in_worker",
+            arguments={
+                "journey_id": thread_id,
+                "action": {
+                    "type": "read",
+                    "target": "README.md"
+                }
+            }
+        )
+
+        # Cleanup when done
+        await session.call_tool("kill_worker", {"journey_id": thread_id})
+```
+
+### Benefits
+
+1. **Non-invasive Integration:** Existing LangGraph workflows don't break
+2. **Persistent Containers:** Spawn once, use many times (amortizes overhead)
+3. **Multi-client Support:** Works with Claude Desktop, LangGraph, VS Code
+4. **YAML-driven:** Pure declaration, no code changes needed for new workers
+5. **Automatic Safety:** Constraint enforcement at MCP layer prevents violations
+6. **Journey Isolation:** Each user gets own isolated worker instance
+
+### Architecture
+
+```
+LangGraph Workflow (lgp/)
+    ↓
+MCP Client Session
+    ↓ (stdio transport)
+Worker Marketplace MCP Server (workers/mcp_server.py)
+    ↓
+WorkerFactory.spawn() (workers/factory.py)
+    ↓
+ClaudeCodeWorker instance (workers/claude_code_worker.py)
+    ↓
+void() → constraint verification (workers/enforcement/)
+    ↓
+execute() → action execution (isolated container)
+```
+
+### Next Steps (R15+)
+
+1. **Trust Escalation:** Workers earn trust through safe actions, automatic promotion
+2. **Worker Catalog UI:** Browse and select workers from marketplace
+3. **Custom Worker Templates:** Users create YAML definitions for custom workers
+4. **Cross-journey Learning:** Workers share learnings across user journeys
+5. **Performance Optimization:** Container pooling, lazy initialization
+
+---
+
+## Key Insights
+
+**R13 + R14 Together:**
+- R13 provides CONFIGURATION LAYER (worker definitions, constraints, isolation)
+- R14 provides INTEGRATION LAYER (MCP tools for LangGraph workflows)
+- Together: Declarative worker marketplace with production-ready safety
+
+**Production Safety:**
+- Constraint enforcement automatic at MCP layer
+- Developers cannot bypass safety checks
+- Journey-scoped isolation prevents cross-contamination
+- Idempotent spawning prevents resource leaks
+
+**Latency Management:**
+- Persistent workers (spawn once, use many times)
+- Process isolation for development (fast)
+- Container isolation for production (secure)
+- Automatic cleanup on journey completion

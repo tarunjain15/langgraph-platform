@@ -1,0 +1,202 @@
+# Production Worker Definition: Filesystem Research Assistant v1
+#
+# Purpose: Research and analyze filesystem structures, codebases, and documentation
+# Use Case: LangGraph workflows that need to explore repositories, read docs, analyze code
+#
+# Trust Level: sandboxed (read-only filesystem, no network access)
+# Isolation: Docker container with constrained workspace
+# Persistence: Session state persisted across interactions
+
+worker_id: filesystem_research_v1
+
+identity:
+  name: "Filesystem Research Assistant"
+
+  system_prompt: |
+    You are a Filesystem Research Assistant with specialized capabilities for exploring
+    and analyzing codebases, documentation, and filesystem structures.
+
+    Your workspace contains pre-seeded context files:
+    - README.md: Overview and getting started guide
+    - ARCHITECTURE.md: System architecture and design decisions
+
+    Your capabilities:
+    - Read files and directories (read-only filesystem)
+    - Search for patterns and keywords
+    - Analyze code structure and dependencies
+    - Extract insights from documentation
+
+    Constraints you must honor:
+    - Filesystem is read-only (no modifications)
+    - File reads limited to 1MB per operation
+    - No network access (fully isolated)
+    - All operations logged to audit trail
+
+    Approach:
+    1. Start by reading the pre-seeded context files
+    2. Use search to locate relevant files
+    3. Read and analyze target files
+    4. Synthesize findings into actionable insights
+
+    Remember: You cannot modify files, create new files, or access the network.
+    Focus on observation, analysis, and insight extraction.
+
+  onboarding_steps:
+    - action: "read"
+      target: "README.md"
+      description: "Read workspace overview and getting started guide"
+
+    - action: "read"
+      target: "ARCHITECTURE.md"
+      description: "Understand system architecture and design decisions"
+
+    - action: "search"
+      target: "."
+      pattern: "*.py"
+      description: "Discover Python files in workspace"
+
+runtime:
+  # Container configuration
+  container: "python:3.11-slim"
+
+  # Workspace template (interpolated with user_journey_id)
+  workspace_template: "/tmp/workers/research/{user_journey_id}"
+
+  # Pre-seed workspace with context files
+  workspace_seed:
+    - source: "README.md"
+      content: |
+        # Filesystem Research Workspace
+
+        This workspace is pre-configured for filesystem research and analysis.
+
+        ## Available Tools
+
+        - `read`: Read file contents
+        - `search`: Search for files by pattern or content
+        - `list`: List directory contents
+
+        ## Constraints
+
+        - **Read-only filesystem**: You cannot create, modify, or delete files
+        - **File size limit**: Max 1MB per read operation
+        - **No network access**: Workspace is fully isolated
+        - **Session persistence**: Your state is preserved across interactions
+
+        ## Getting Started
+
+        1. Read ARCHITECTURE.md to understand the system design
+        2. Use search to discover relevant files
+        3. Read and analyze target files
+        4. Extract insights and answer questions
+
+    - source: "ARCHITECTURE.md"
+      content: |
+        # System Architecture
+
+        This document describes the architecture of the system you are researching.
+
+        ## Worker Marketplace (R13)
+
+        Workers are isolated execution contexts with:
+        - **Declarative definitions** (YAML)
+        - **Automatic constraint enforcement** (R13.4)
+        - **Container isolation** (Docker)
+        - **Session persistence** (state preserved)
+
+        ## MCP Integration (R14)
+
+        Workers exposed as MCP tools for LangGraph:
+        - `spawn_worker`: Create isolated worker instance
+        - `execute_in_worker`: Run action with constraint verification
+        - `get_worker_state`: Query worker status
+        - `kill_worker`: Cleanup and terminate
+
+        ## Flow Pressure System (R11)
+
+        Execution layer with:
+        - `void()`: Simulate without side effects
+        - `execute()`: Run with side effects
+        - `pressure()`: Detect unfulfilled demands
+        - `constraints()`: Get sacred constraints
+
+        ## Key Principles
+
+        1. **Sacred constraints**: Non-negotiable boundaries
+        2. **Witness automation**: Constraints verified automatically
+        3. **Isolation first**: Every worker gets own container
+        4. **Declaration over code**: YAML defines behavior
+
+  # Available tools (read-only)
+  tools:
+    - "read"
+    - "search"
+    - "list"
+
+  # Session persistence (state survives between calls)
+  session_persistence: true
+
+  # Resource limits
+  max_memory_mb: 512
+  max_cpu_percent: 50
+
+constraints:
+  # Constraint 1: Read-only filesystem
+  - constraint_id: "readonly_filesystem"
+    witness: "verify_workspace_isolation"
+    value: "read_only"
+    feedback: "alert_dashboard"
+
+  # Constraint 2: File size limit (1MB per read)
+  - constraint_id: "max_file_size"
+    witness: "verify_file_size_within_limit"
+    value: "1MB"
+    feedback: "alert_dashboard"
+
+  # Constraint 3: No network access
+  - constraint_id: "network_isolation"
+    witness: "verify_no_network_access"
+    value: "blocked"
+    feedback: "alert_dashboard"
+
+  # Constraint 4: Search rate limiting
+  - constraint_id: "search_rate_limit"
+    witness: "verify_search_count_within_hourly_limit"
+    value: "100_per_hour"
+    feedback: "log"
+
+# Trust level (determines isolation strictness)
+trust_level: "sandboxed"
+
+# Metadata
+metadata:
+  version: "1.0.0"
+  created: "2025-01-25"
+  author: "Worker Marketplace Team"
+  tags:
+    - "research"
+    - "filesystem"
+    - "read-only"
+    - "production"
+
+  description: |
+    Production-ready worker for filesystem research and analysis.
+
+    Use cases:
+    - Codebase exploration and understanding
+    - Documentation analysis
+    - Dependency mapping
+    - Architecture discovery
+
+    Safety features:
+    - Read-only filesystem (cannot modify files)
+    - File size limits (1MB per operation)
+    - Network isolation (no external access)
+    - Automatic constraint enforcement (R13.4)
+    - Container isolation (Docker)
+
+    Integration:
+    - Exposed as MCP tool via workers/mcp_server.py
+    - Accessible from LangGraph workflows
+    - Session state persisted across interactions
+    - Journey-scoped isolation (each user gets own instance)
