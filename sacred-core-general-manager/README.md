@@ -1,5 +1,7 @@
 # Sacred Core: General Manager (GM1)
 
+**Status: ✅ PARKED** - GM1.1-GM1.4 Complete, tested with GPT-4o + Brave Search
+
 **Config-driven conversational managers with MCP tool access.**
 
 ---
@@ -8,7 +10,7 @@
 
 **General Manager** is a factory pattern implementation that creates conversational AI managers from YAML config files. Each manager has:
 - **Identity** (system prompt from Markdown)
-- **Agency** (LLM provider: Ollama or Claude)
+- **Agency** (LLM provider: Ollama, OpenAI, or Claude)
 - **Tools** (MCP server connections)
 - **Terminal** (interactive conversation interface)
 
@@ -17,56 +19,52 @@
 ## Quick Start
 
 ```bash
-# After implementation complete
-python run_manager.py managers/research_manager.yaml
+# From langgraph-platform root
+cd /Users/tarun/claude-workspace/workspace/langgraph-platform
+python3 playground/run_manager.py general_manager/managers/research_manager.yaml
 
-You: List files in /tmp
-Manager: [Uses filesystem tool, returns results]
+You: Search the web for latest AI news
+Manager: [Uses brave_search tool, returns results]
 
-You: Navigate to example.com
-Manager: [Uses playwright tool, opens browser]
+You: List files in /Users/tarun/workspace
+Manager: [Uses filesystem tool, returns directory listing]
 ```
 
 ---
 
-## Documents
+## Implementation Status
 
-| Document | Purpose | Read When |
-|----------|---------|-----------|
-| [01-the-project.md](01-the-project.md) | What General Manager IS | Starting the project |
-| [02-the-discipline.md](02-the-discipline.md) | Sacred constraints | Making design decisions |
-| [03-implementation-plan.md](03-implementation-plan.md) | Execution roadmap | Implementing features |
+| Phase | Task | Status |
+|-------|------|--------|
+| GM1.1 | Config Schema & Loader | ✅ Complete |
+| GM1.2 | LLM Provider (Multi) | ✅ Complete (Ollama, OpenAI, Claude) |
+| GM1.3 | MCP Tool Registry | ✅ Complete (Brave Search, Filesystem, Playwright) |
+| GM1.4 | LangGraph Manager + Terminal | ✅ Complete |
 
----
-
-## Reading Order
-
-1. **Start:** [01-the-project.md](01-the-project.md) - Understand the primitive
-2. **Constraints:** [02-the-discipline.md](02-the-discipline.md) - Know the rules
-3. **Execute:** [03-implementation-plan.md](03-implementation-plan.md) - Follow the plan
+**Branch:** `feature/general-manager`
 
 ---
 
-## The Primitive
+## File Structure (Actual)
 
 ```
-Config (YAML) → Factory → Manager → Terminal → Conversation
+langgraph-platform/
+├── general_manager/              # Core platform module
+│   ├── config.py                # YAML schema and loader
+│   ├── factory.py               # Manager instantiation
+│   ├── manager.py               # LangGraph state machine
+│   ├── llm_providers.py         # Multi-provider support
+│   ├── tool_registry.py         # MCP tool connections
+│   ├── terminal/                # Interactive conversation
+│   ├── managers/                # YAML configs
+│   │   └── research_manager.yaml
+│   └── prompts/                 # System prompts
+│       └── research_manager.md
+├── playground/                   # Testing tools
+│   ├── run_manager.py           # Interactive runner
+│   └── mcp-integration-notes.md # MCP notes
+└── sacred-core-general-manager/ # This folder
 ```
-
-**One factory. Infinite managers. Zero code changes per manager.**
-
----
-
-## Implementation Phases
-
-| Phase | Task | Duration | Status |
-|-------|------|----------|--------|
-| GM1.1 | Config Schema & Loader | 45 min | Pending |
-| GM1.2 | LLM Provider (Ollama) | 1 hour | Pending |
-| GM1.3 | MCP Tool Registry | 1.5 hours | Pending |
-| GM1.4 | LangGraph Manager + Terminal | 2 hours | Pending |
-
-**Total Estimated:** 4-6 hours
 
 ---
 
@@ -80,36 +78,26 @@ Config (YAML) → Factory → Manager → Terminal → Conversation
 
 ---
 
-## File Structure (Target)
+## Documents
 
-```
-general-manager/
-├── sacred-core-general-manager/   # This folder
-├── managers/                      # YAML configs
-├── prompts/                       # System prompts
-├── gm/                            # Core package
-│   ├── config.py
-│   ├── factory.py
-│   ├── manager.py
-│   ├── llm_providers.py
-│   ├── tool_registry.py
-│   └── terminal/
-└── run_manager.py
-```
+| Document | Purpose |
+|----------|---------|
+| [01-the-project.md](01-the-project.md) | What General Manager IS |
+| [02-the-discipline.md](02-the-discipline.md) | Sacred constraints |
+| [03-implementation-plan.md](03-implementation-plan.md) | Implementation roadmap |
 
 ---
 
 ## Prerequisites
 
 ```bash
-# Ollama (local LLM)
-ollama serve
-ollama pull llama3.2
-
 # Node.js (for MCP servers)
 node --version  # v18+
 
-# Python
-python -m venv venv
-pip install langgraph mcp pyyaml httpx
+# Python dependencies
+pip install langgraph pyyaml httpx python-dotenv langfuse
+
+# API Keys in .env
+OPENAI_API_KEY=...
+BRAVE_API_KEY=...
 ```
